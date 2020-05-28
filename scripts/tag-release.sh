@@ -17,7 +17,7 @@
 set -eu
 set -o pipefail
 
-VERSION="1.4.2"
+VERSION="v1.4.2"
 
 if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc+(-.*)?)?$ ]]; then
   echo "usage: $0 vMAJOR.MINOR.PATCH[-rc[-*]]"
