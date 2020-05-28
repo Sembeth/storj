@@ -19,11 +19,6 @@ set -o pipefail
 
 VERSION="v1.4.2"
 
-if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc+(-.*)?)?$ ]]; then
-  echo "usage: $0 vMAJOR.MINOR.PATCH[-rc[-*]]"
-  exit 1
-fi
-
 cd "$(git rev-parse --show-toplevel)"
 
 if [[ "$(git diff --stat)" != '' ]] || [[ -n "$(git status -s)" ]]; then
