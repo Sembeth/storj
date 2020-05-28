@@ -7,6 +7,7 @@ package filestore
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -33,7 +34,27 @@ func diskInfoFromPath(path string) (info DiskInfo, err error) {
 
 // rename renames oldpath to newpath
 func rename(oldpath, newpath string) error {
-	return os.Rename(oldpath, newpath)
+	inputFile, err := os.Open(oldpath)
+	if err != nil {
+		return fmt.Errorf("Couldn't open source file: %s", err)
+	}
+	outputFile, err := os.Create(newpath)
+	if err != nil {
+		inputFile.Close()
+		return fmt.Errorf("Couldn't open dest file: %s", err)
+	}
+	defer outputFile.Close()
+	_, err = io.Copy(outputFile, inputFile)
+	inputFile.Close()
+	if err != nil {
+		return fmt.Errorf("Writing to output file failed: %s", err)
+	}
+	// The copy was successful, so now delete the original file
+	err = os.Remove(oldpath)
+	if err != nil {
+		return fmt.Errorf("Failed removing original file: %s", err)
+	}
+	return nil
 }
 
 // openFileReadOnly opens the file with read only
