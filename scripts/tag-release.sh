@@ -19,12 +19,9 @@ set -o pipefail
 
 VERSION="v1.4.2"
 
-cd "$(git rev-parse --show-toplevel)"
+echo "run tag-release.sh script with version 1.4.2"
 
-if [[ "$(git diff --stat)" != '' ]] || [[ -n "$(git status -s)" ]]; then
-  echo "git working tree unclean"
-  exit 1
-fi
+cd "$(git rev-parse --show-toplevel)"
 
 TIMESTAMP=$(date +%s)
 COMMIT=$(git rev-parse HEAD)
