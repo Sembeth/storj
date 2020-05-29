@@ -37,26 +37,18 @@ COMMIT=$(git rev-parse HEAD)
 cat > ./private/version/release.go <<EOF
 // Copyright (C) 2020 Storj Labs, Inc.
 // See LICENSE for copying information.
-
 package version
-
 import _ "unsafe" // needed for go:linkname
-
 //go:linkname buildTimestamp storj.io/private/version.buildTimestamp
 var buildTimestamp string = "$TIMESTAMP"
-
 //go:linkname buildCommitHash storj.io/private/version.buildCommitHash
 var buildCommitHash string = "$COMMIT"
-
 //go:linkname buildVersion storj.io/private/version.buildVersion
 var buildVersion string = "$VERSION"
-
 //go:linkname buildRelease storj.io/private/version.buildRelease
 var buildRelease string = "true"
-
 // ensure that linter understands that the variables are being used.
 func init() { use(buildTimestamp, buildCommitHash, buildVersion, buildRelease) }
-
 func use(...interface{}) {}
 EOF
 
