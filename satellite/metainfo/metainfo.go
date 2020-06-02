@@ -19,6 +19,7 @@ import (
 	"storj.io/common/encryption"
 	"storj.io/common/errs2"
 	"storj.io/common/macaroon"
+	"storj.io/common/memory"
 	"storj.io/common/pb"
 	"storj.io/common/rpc/rpcstatus"
 	"storj.io/common/signing"
@@ -1001,6 +1002,10 @@ func (endpoint *Endpoint) commitObject(ctx context.Context, req *pb.ObjectCommit
 		return nil, err
 	}
 
+	metadataSize := memory.Size(len(req.EncryptedMetadata))
+	if metadataSize > endpoint.config.MaxMetadataSize {
+		return nil, rpcstatus.Error(rpcstatus.InvalidArgument, fmt.Sprintf("Metadata is too large, got %v, maximum allowed is %v", metadataSize, endpoint.config.MaxMetadataSize))
+	}
 	streamMeta := pb.StreamMeta{}
 	err = pb.Unmarshal(req.EncryptedMetadata, &streamMeta)
 	if err != nil {
@@ -1952,6 +1957,9 @@ func (endpoint *Endpoint) DownloadSegment(ctx context.Context, req *pb.SegmentDo
 	}
 
 	segmentID, err := endpoint.packSegmentID(ctx, &pb.SatSegmentID{})
+	if err != nil {
+		return nil, rpcstatus.Error(rpcstatus.Internal, err.Error())
+	}
 
 	var encryptedKeyNonce storj.Nonce
 	var encryptedKey []byte

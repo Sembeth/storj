@@ -299,11 +299,22 @@ func (paymentService PaymentsService) BillingHistory(ctx context.Context) (billi
 	}
 
 	for _, coupon := range coupons {
+		alreadyUsed, err := paymentService.service.accounts.Coupons().TotalUsage(ctx, coupon.ID)
+		if err != nil {
+			return nil, Error.Wrap(err)
+		}
+
+		remaining := coupon.Amount - alreadyUsed
+		if coupon.Status == payments.CouponExpired {
+			remaining = 0
+		}
+
 		billingHistory = append(billingHistory,
 			&BillingHistoryItem{
 				ID:          coupon.ID.String(),
 				Description: coupon.Description,
 				Amount:      coupon.Amount,
+				Remaining:   remaining,
 				Status:      "Added to balance",
 				Link:        "",
 				Start:       coupon.Created,
@@ -324,7 +335,24 @@ func (paymentService PaymentsService) BillingHistory(ctx context.Context) (billi
 				Amount:      credit.Amount,
 				Status:      "Added to balance",
 				Start:       credit.Created,
-				Type:        Credits,
+				Type:        DepositBonus,
+			},
+		)
+	}
+
+	bonuses, err := paymentService.service.accounts.StorjTokens().ListDepositBonuses(ctx, auth.User.ID)
+	if err != nil {
+		return nil, Error.Wrap(err)
+	}
+
+	for _, bonus := range bonuses {
+		billingHistory = append(billingHistory,
+			&BillingHistoryItem{
+				Description: fmt.Sprintf("%d%% bonus for deposit made in STORJ", bonus.Percentage),
+				Amount:      bonus.AmountCents,
+				Status:      "Added to balance",
+				Start:       bonus.CreatedAt,
+				Type:        DepositBonus,
 			},
 		)
 	}
