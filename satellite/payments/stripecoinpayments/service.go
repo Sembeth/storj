@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -451,7 +450,7 @@ func (service *Service) processCustomers(ctx context.Context, customers []Custom
 	var usages []CouponUsage
 	var creditsSpendings []CreditsSpending
 	for _, customer := range customers {
-		projects, err := service.projectsDB.GetByUserID(ctx, customer.UserID)
+		projects, err := service.projectsDB.GetOwn(ctx, customer.UserID)
 		if err != nil {
 			return err
 		}
@@ -467,12 +466,6 @@ func (service *Service) processCustomers(ctx context.Context, customers []Custom
 		if err != nil {
 			return err
 		}
-
-		sort.Slice(coupons, func(i, k int) bool {
-			iDate := coupons[i].ExpirationDate()
-			kDate := coupons[k].ExpirationDate()
-			return iDate.Before(kDate)
-		})
 
 		// Apply any promotional credits (a.k.a. coupons) on the remainder.
 		for _, coupon := range coupons {
