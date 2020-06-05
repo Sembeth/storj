@@ -17,19 +17,11 @@
 set -eu
 set -o pipefail
 
-VERSION="${1-}"
+VERSION="v1.5.2"
 
-if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc+(-.*)?)?$ ]]; then
-  echo "usage: $0 vMAJOR.MINOR.PATCH[-rc[-*]]"
-  exit 1
-fi
+echo "run tag-release.sh script with version 1.4.2"
 
 cd "$(git rev-parse --show-toplevel)"
-
-if [[ "$(git diff --stat)" != '' ]] || [[ -n "$(git status -s)" ]]; then
-  echo "git working tree unclean"
-  exit 1
-fi
 
 TIMESTAMP=$(date +%s)
 COMMIT=$(git rev-parse HEAD)
