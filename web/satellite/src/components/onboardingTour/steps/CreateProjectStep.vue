@@ -68,7 +68,7 @@ import { PROJECTS_ACTIONS } from '@/store/modules/projects';
 import { CreateProjectModel, Project } from '@/types/projects';
 import { PM_ACTIONS } from '@/utils/constants/actionNames';
 import { SegmentEvent } from '@/utils/constants/analyticsEventNames';
-import { anyCharactersButSlash } from '@/utils/validation';
+import { Validator } from '@/utils/validation';
 
 @Component({
     components: {
@@ -146,7 +146,7 @@ export default class CreateProjectStep extends Vue {
         }
 
         try {
-            await this.$store.dispatch(PAYMENTS_ACTIONS.GET_BILLING_HISTORY);
+            await this.$store.dispatch(PAYMENTS_ACTIONS.GET_PAYMENTS_HISTORY);
         } catch (error) {
             await this.$notify.error(`Unable to get billing history. ${error.message}`);
         }
@@ -186,7 +186,7 @@ export default class CreateProjectStep extends Vue {
             return false;
         }
 
-        if (!anyCharactersButSlash(this.projectName)) {
+        if (!Validator.anyCharactersButSlash(this.projectName)) {
             this.nameError = 'Project name can\'t have forward slash';
 
             return false;
