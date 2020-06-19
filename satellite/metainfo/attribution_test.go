@@ -16,7 +16,6 @@ import (
 	"storj.io/common/uuid"
 	"storj.io/storj/private/testplanet"
 	"storj.io/uplink"
-	"storj.io/uplink/private/metainfo"
 )
 
 func TestResolvePartnerID(t *testing.T) {
@@ -29,115 +28,44 @@ func TestResolvePartnerID(t *testing.T) {
 		require.NoError(t, err)
 
 		// no header
-		_, err = endpoint.ResolvePartnerID(ctx, nil, []byte{1, 2, 3})
+		_, err = endpoint.ResolvePartnerID(ctx, nil)
 		require.Error(t, err)
-
-		// bad uuid
-		_, err = endpoint.ResolvePartnerID(ctx, &pb.RequestHeader{}, []byte{1, 2, 3})
-		require.Error(t, err)
-
-		randomUUID := testrand.UUID()
-
-		// good uuid
-		result, err := endpoint.ResolvePartnerID(ctx, &pb.RequestHeader{}, randomUUID[:])
-		require.NoError(t, err)
-		require.Equal(t, randomUUID, result)
 
 		partnerID, err := endpoint.ResolvePartnerID(ctx, &pb.RequestHeader{
 			UserAgent: []byte("not-a-partner"),
-		}, nil)
+		})
 		require.NoError(t, err)
 		require.Equal(t, uuid.UUID{}, partnerID)
 
 		partnerID, err = endpoint.ResolvePartnerID(ctx, &pb.RequestHeader{
 			UserAgent: []byte("Zenko"),
-		}, nil)
+		})
 		require.NoError(t, err)
 		require.Equal(t, zenkoPartnerID, partnerID)
 
 		partnerID, err = endpoint.ResolvePartnerID(ctx, &pb.RequestHeader{
 			UserAgent: []byte("Zenko uplink/v1.0.0"),
-		}, nil)
+		})
 		require.NoError(t, err)
 		require.Equal(t, zenkoPartnerID, partnerID)
 
 		partnerID, err = endpoint.ResolvePartnerID(ctx, &pb.RequestHeader{
 			UserAgent: []byte("Zenko uplink/v1.0.0 (drpc/v0.10.0 common/v0.0.0-00010101000000-000000000000)"),
-		}, nil)
+		})
 		require.NoError(t, err)
 		require.Equal(t, zenkoPartnerID, partnerID)
 
 		partnerID, err = endpoint.ResolvePartnerID(ctx, &pb.RequestHeader{
 			UserAgent: []byte("Zenko uplink/v1.0.0 (drpc/v0.10.0) (common/v0.0.0-00010101000000-000000000000)"),
-		}, nil)
+		})
 		require.NoError(t, err)
 		require.Equal(t, zenkoPartnerID, partnerID)
 
 		partnerID, err = endpoint.ResolvePartnerID(ctx, &pb.RequestHeader{
 			UserAgent: []byte("uplink/v1.0.0 (drpc/v0.10.0 common/v0.0.0-00010101000000-000000000000)"),
-		}, nil)
+		})
 		require.NoError(t, err)
 		require.Equal(t, uuid.UUID{}, partnerID)
-	})
-}
-
-func TestSetBucketAttribution(t *testing.T) {
-	testplanet.Run(t, testplanet.Config{
-		SatelliteCount: 1, StorageNodeCount: 0, UplinkCount: 1,
-	}, func(t *testing.T, ctx *testcontext.Context, planet *testplanet.Planet) {
-		apiKey := planet.Uplinks[0].APIKey[planet.Satellites[0].ID()]
-		uplink := planet.Uplinks[0]
-
-		err := uplink.CreateBucket(ctx, planet.Satellites[0], "alpha")
-		require.NoError(t, err)
-
-		err = uplink.CreateBucket(ctx, planet.Satellites[0], "alpha-new")
-		require.NoError(t, err)
-
-		metainfoClient, err := planet.Uplinks[0].DialMetainfo(ctx, planet.Satellites[0], apiKey)
-		require.NoError(t, err)
-		defer ctx.Check(metainfoClient.Close)
-
-		partnerID := testrand.UUID()
-		{ // bucket with no items
-			err = metainfoClient.SetBucketAttribution(ctx, metainfo.SetBucketAttributionParams{
-				Bucket:    "alpha",
-				PartnerID: partnerID,
-			})
-			require.NoError(t, err)
-		}
-
-		{ // setting attribution on a bucket that doesn't exist should fail
-			err = metainfoClient.SetBucketAttribution(ctx, metainfo.SetBucketAttributionParams{
-				Bucket:    "beta",
-				PartnerID: partnerID,
-			})
-			require.Error(t, err)
-		}
-
-		{ // add data to an attributed bucket
-			err = planet.Uplinks[0].Upload(ctx, planet.Satellites[0], "alpha", "path", []byte{1, 2, 3})
-			assert.NoError(t, err)
-
-			// trying to set attribution should be ignored
-			err = metainfoClient.SetBucketAttribution(ctx, metainfo.SetBucketAttributionParams{
-				Bucket:    "alpha",
-				PartnerID: partnerID,
-			})
-			require.NoError(t, err)
-		}
-
-		{ // non attributed bucket, and adding files
-			err = planet.Uplinks[0].Upload(ctx, planet.Satellites[0], "alpha-new", "path", []byte{1, 2, 3})
-			assert.NoError(t, err)
-
-			// bucket with items
-			err = metainfoClient.SetBucketAttribution(ctx, metainfo.SetBucketAttributionParams{
-				Bucket:    "alpha-new",
-				PartnerID: partnerID,
-			})
-			require.Error(t, err)
-		}
 	})
 }
 

@@ -29,19 +29,19 @@ require (
 	github.com/spf13/viper v1.4.0
 	github.com/stretchr/testify v1.5.1
 	github.com/stripe/stripe-go v70.15.0+incompatible
-	github.com/vivint/infectious v0.0.0-20190108171102-2455b059135b
+	github.com/vivint/infectious v0.0.0-20200605153912-25a574ae18a3
 	github.com/zeebo/errs v1.2.2
 	go.etcd.io/bbolt v1.3.4
 	go.uber.org/zap v1.15.0
-	golang.org/x/crypto v0.0.0-20200220183623-bac4c82f6975
+	golang.org/x/crypto v0.0.0-20200604202706-70a84ac30bf9
 	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e // indirect
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
-	golang.org/x/sys v0.0.0-20200323222414-85ca7c5b95cd
+	golang.org/x/sys v0.0.0-20200610111108-226ff32320da
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
 	golang.org/x/tools v0.0.0-20200428211428-0c9eba77bc32 // indirect
-	storj.io/common v0.0.0-20200611114417-9a3d012fdb62
+	storj.io/common v0.0.0-20200616122322-79b46deca70e
 	storj.io/drpc v0.0.12
 	storj.io/monkit-jaeger v0.0.0-20200518165323-80778fc3f91b
 	storj.io/private v0.0.0-20200605221229-3236fe879ab3
-	storj.io/uplink v1.0.7
+	storj.io/uplink v1.1.2-0.20200616114910-dfd129c9d183
 )
