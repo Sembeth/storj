@@ -33,6 +33,7 @@ import (
 	"storj.io/storj/satellite/metainfo/pointerverification"
 	"storj.io/storj/satellite/orders"
 	"storj.io/storj/satellite/overlay"
+	"storj.io/storj/satellite/revocation"
 	"storj.io/storj/satellite/rewards"
 	"storj.io/uplink/private/eestream"
 	"storj.io/uplink/private/storage/meta"
@@ -61,13 +62,6 @@ type APIKeys interface {
 	GetByHead(ctx context.Context, head []byte) (*console.APIKeyInfo, error)
 }
 
-// Revocations is the revocations store methods used by the endpoint
-//
-// architecture: Database
-type Revocations interface {
-	GetByProjectID(ctx context.Context, projectID uuid.UUID) ([][]byte, error)
-}
-
 // Endpoint metainfo endpoint.
 //
 // architecture: Endpoint
@@ -87,6 +81,7 @@ type Endpoint struct {
 	satellite            signing.Signer
 	limiterCache         *lrucache.ExpiringLRU
 	encInlineSegmentSize int64 // max inline segment size + encryption overhead
+	revocations          revocation.DB
 	config               Config
 }
 
@@ -95,7 +90,7 @@ func NewEndpoint(log *zap.Logger, metainfo *Service, deletePieces *piecedeletion
 	orders *orders.Service, cache *overlay.Service, attributions attribution.DB,
 	partners *rewards.PartnersService, peerIdentities overlay.PeerIdentities,
 	apiKeys APIKeys, projectUsage *accounting.Service, projects console.Projects,
-	satellite signing.Signer, config Config) (*Endpoint, error) {
+	satellite signing.Signer, revocations revocation.DB, config Config) (*Endpoint, error) {
 	// TODO do something with too many params
 
 	encInlineSegmentSize, err := encryption.CalcEncryptedSize(config.MaxInlineSegmentSize.Int64(), storj.EncryptionParameters{
@@ -124,6 +119,7 @@ func NewEndpoint(log *zap.Logger, metainfo *Service, deletePieces *piecedeletion
 			Expiration: config.RateLimiter.CacheExpiration,
 		}),
 		encInlineSegmentSize: encInlineSegmentSize,
+		revocations:          revocations,
 		config:               config,
 	}, nil
 }
@@ -2093,7 +2089,23 @@ func (endpoint *Endpoint) redundancyScheme() *pb.RedundancyScheme {
 	}
 }
 
-// RevokeAPIKey revokes an api key
-func (endpoint *Endpoint) RevokeAPIKey(context.Context, *pb.RevokeAPIKeyRequest) (*pb.RevokeAPIKeyResponse, error) {
-	return nil, rpcstatus.Error(rpcstatus.Unimplemented, "not implemented")
+// RevokeAPIKey handles requests to revoke an api key.
+func (endpoint *Endpoint) RevokeAPIKey(ctx context.Context, req *pb.RevokeAPIKeyRequest) (resp *pb.RevokeAPIKeyResponse, err error) {
+	defer mon.Task()(&ctx)(&err)
+	macToRevoke, err := macaroon.ParseMacaroon(req.GetApiKey())
+	if err != nil {
+		return nil, rpcstatus.Error(rpcstatus.InvalidArgument, "API key to revoke is not a macaroon")
+	}
+	keyInfo, err := endpoint.validateRevoke(ctx, req.Header, macToRevoke)
+	if err != nil {
+		return nil, err
+	}
+
+	err = endpoint.revocations.Revoke(ctx, macToRevoke.Tail(), keyInfo.ID[:])
+	if err != nil {
+		endpoint.log.Error("Failed to revoke API key", zap.Error(err))
+		return nil, rpcstatus.Error(rpcstatus.Internal, "Failed to revoke API key")
+	}
+
+	return &pb.RevokeAPIKeyResponse{}, nil
 }
