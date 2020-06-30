@@ -24,10 +24,18 @@ type DB interface {
 	AllPayStubs(ctx context.Context, period string) ([]PayStub, error)
 	// SatellitesHeldbackHistory retrieves heldback history for specific satellite from DB.
 	SatellitesHeldbackHistory(ctx context.Context, satelliteID storj.NodeID) ([]AmountPeriod, error)
+	// SatellitesDisposedHistory returns all disposed amount for specific satellite from DB.
+	SatellitesDisposedHistory(ctx context.Context, satelliteID storj.NodeID) (int64, error)
 	// SatellitePeriods retrieves all periods for concrete satellite in which we have some heldamount data.
 	SatellitePeriods(ctx context.Context, satelliteID storj.NodeID) ([]string, error)
 	// AllPeriods retrieves all periods in which we have some heldamount data.
 	AllPeriods(ctx context.Context) ([]string, error)
+	// StorePayment inserts or updates payment into the DB
+	StorePayment(ctx context.Context, payment Payment) error
+	// GetPayment retrieves payment stats for specific satellite in specific period.
+	GetPayment(ctx context.Context, satelliteID storj.NodeID, period string) (*Payment, error)
+	// AllPayments retrieves payment stats from all satellites in specific period from DB.
+	AllPayments(ctx context.Context, period string) ([]Payment, error)
 }
 
 // ErrNoPayStubForPeriod represents errors from the heldamount database.
@@ -80,4 +88,15 @@ type PayoutMonthly struct {
 	DiskSpace         float64 `json:"diskSpace"`
 	DiskSpaceAmount   int64   `json:"diskSpaceAmount"`
 	HeldPercentRate   int64   `json:"heldRate"`
+}
+
+// Payment is node payment data for specific period.
+type Payment struct {
+	ID          int64        `json:"id"`
+	Created     time.Time    `json:"created"`
+	SatelliteID storj.NodeID `json:"satelliteId"`
+	Period      string       `json:"period"`
+	Amount      int64        `json:"amount"`
+	Receipt     string       `json:"receipt"`
+	Notes       string       `json:"notes"`
 }
