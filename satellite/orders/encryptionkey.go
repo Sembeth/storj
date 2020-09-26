@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/zeebo/errs"
+	"golang.org/x/crypto/nacl/secretbox"
 
+	"storj.io/common/pb"
 	"storj.io/common/storj"
 )
 
@@ -38,6 +40,59 @@ type EncryptionKeys struct {
 type EncryptionKey struct {
 	ID  EncryptionKeyID
 	Key storj.Key
+}
+
+// When this fails to compile, then `serialToNonce` should be adjusted accordingly.
+var _ = ([16]byte)(storj.SerialNumber{})
+
+func serialToNonce(serial storj.SerialNumber) (x [24]byte) {
+	copy(x[:], serial[:])
+	return x
+}
+
+// Encrypt encrypts data and nonce using the key.
+func (key *EncryptionKey) Encrypt(plaintext []byte, nonce storj.SerialNumber) []byte {
+	out := make([]byte, 0, len(plaintext)+secretbox.Overhead)
+	n := serialToNonce(nonce)
+	k := ([32]byte)(key.Key)
+	return secretbox.Seal(out, plaintext, &n, &k)
+}
+
+// Decrypt decrypts data and nonce using the key.
+func (key *EncryptionKey) Decrypt(ciphertext []byte, nonce storj.SerialNumber) ([]byte, error) {
+	out := make([]byte, 0, len(ciphertext)-secretbox.Overhead)
+	n := serialToNonce(nonce)
+	k := ([32]byte)(key.Key)
+	dec, ok := secretbox.Open(out, ciphertext, &n, &k)
+	if !ok {
+		return nil, ErrEncryptionKey.New("unable to decrypt")
+	}
+	return dec, nil
+}
+
+// EncryptMetadata encrypts order limit metadata.
+func (key *EncryptionKey) EncryptMetadata(serial storj.SerialNumber, metadata *pb.OrderLimitMetadata) ([]byte, error) {
+	marshaled, err := pb.Marshal(metadata)
+	if err != nil {
+		return nil, ErrEncryptionKey.Wrap(err)
+	}
+	return key.Encrypt(marshaled, serial), nil
+}
+
+// DecryptMetadata decrypts order limit metadata.
+func (key *EncryptionKey) DecryptMetadata(serial storj.SerialNumber, encrypted []byte) (*pb.OrderLimitMetadata, error) {
+	decrypted, err := key.Decrypt(encrypted, serial)
+	if err != nil {
+		return nil, ErrEncryptionKey.Wrap(err)
+	}
+
+	metadata := &pb.OrderLimitMetadata{}
+	err = pb.Unmarshal(decrypted, metadata)
+	if err != nil {
+		return nil, ErrEncryptionKey.Wrap(err)
+	}
+
+	return metadata, nil
 }
 
 // IsZero returns whether they key contains some data.
@@ -84,6 +139,9 @@ func (EncryptionKeys) Type() string { return "orders.EncryptionKeys" }
 func (keys *EncryptionKeys) Set(s string) error {
 	if keys.KeyByID == nil {
 		keys.KeyByID = map[EncryptionKeyID]storj.Key{}
+	}
+	if s == "" {
+		return nil
 	}
 
 	for _, x := range strings.Split(s, ",") {

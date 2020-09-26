@@ -117,7 +117,7 @@ func cmdSetup(cmd *cobra.Command, args []string) (err error) {
 
 	// NB: accesses should always be `map[string]interface{}` for "conventional"
 	// config serialization/flattening.
-	accesses := toStringMapE(setupCfg.Accesses)
+	accesses := convertAccessesForViper(setupCfg.Accesses)
 	accesses[accessName] = accessData
 	overrides["accesses"] = accesses
 
@@ -145,8 +145,6 @@ func cmdSetup(cmd *cobra.Command, args []string) (err error) {
 	// has ended OK, so we ignore it.
 	fmt.Println(`
 Your Uplink CLI is configured and ready to use!
-
-Some things to try next:
 
 * See https://documentation.tardigrade.io/api-reference/uplink-cli for some example commands`)
 

@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap/zaptest"
 
 	"storj.io/common/testcontext"
+	"storj.io/common/testrand"
 	"storj.io/storj/pkg/auth"
 	"storj.io/storj/satellite"
 	"storj.io/storj/satellite/accounting"
@@ -50,7 +51,9 @@ func TestGraphqlQuery(t *testing.T) {
 		cache, err := live.NewCache(log.Named("cache"), live.Config{StorageBackend: "redis://" + redis.Addr() + "?db=0"})
 		require.NoError(t, err)
 
-		projectUsage := accounting.NewService(db.ProjectAccounting(), cache, 0, 0, 5*time.Minute)
+		projectLimitCache := accounting.NewProjectLimitCache(db.ProjectAccounting(), 0, 0, accounting.ProjectLimitConfig{CacheCapacity: 100})
+
+		projectUsage := accounting.NewService(db.ProjectAccounting(), cache, projectLimitCache, 5*time.Minute)
 
 		// TODO maybe switch this test to testplanet to avoid defining config and Stripe service
 		pc := paymentsconfig.Config{
@@ -61,7 +64,7 @@ func TestGraphqlQuery(t *testing.T) {
 
 		paymentsService, err := stripecoinpayments.NewService(
 			log.Named("payments.stripe:service"),
-			stripecoinpayments.NewStripeMock(),
+			stripecoinpayments.NewStripeMock(testrand.NodeID()),
 			pc.StripeCoinPayments,
 			db.StripeCoinPayments(),
 			db.Console().Projects(),
@@ -73,7 +76,8 @@ func TestGraphqlQuery(t *testing.T) {
 			pc.CouponValue,
 			pc.CouponDuration,
 			pc.CouponProjectLimit,
-			pc.MinCoinPayment)
+			pc.MinCoinPayment,
+			pc.PaywallProportion)
 		require.NoError(t, err)
 
 		service, err := console.NewService(
@@ -85,7 +89,7 @@ func TestGraphqlQuery(t *testing.T) {
 			db.Rewards(),
 			partnersService,
 			paymentsService.Accounts(),
-			console.Config{PasswordCost: console.TestPasswordCost},
+			console.Config{PasswordCost: console.TestPasswordCost, DefaultProjectLimit: 5},
 			5000,
 		)
 		require.NoError(t, err)

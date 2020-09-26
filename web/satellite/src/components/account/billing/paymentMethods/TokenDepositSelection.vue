@@ -1,10 +1,11 @@
+import {PaymentsHistoryItemType} from "@/types/payments";
 // Copyright (C) 2019 Storj Labs, Inc.
 // See LICENSE for copying information.
 
 <template>
     <div class="form-container">
         <div class="selected-container" v-if="!isCustomAmount">
-            <div id="paymentSelectButton" class="selected-container__label-container" @click="open">
+            <div class="selected-container__label-container" @click="open">
                 <p class="selected-container__label-container__label">{{current.label}}</p>
                 <div class="selected-container__label-container__svg">
                     <svg width="14" height="8" viewBox="0 0 14 8" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -29,7 +30,6 @@
             </div>
         </label>
         <div
-            id="paymentSelect"
             class="options-container"
             :class="{ 'top-expand': isExpandingTop }"
             v-if="isSelectionShown"
@@ -64,9 +64,9 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator';
 
-import { PaymentAmountOption } from '@/types/payments';
+import { RouteConfig } from '@/router';
+import { PaymentAmountOption, PaymentsHistoryItem } from '@/types/payments';
 import { APP_STATE_ACTIONS } from '@/utils/constants/actionNames';
-import { ProjectOwning } from '@/utils/projectOwning';
 
 @Component
 export default class TokenDepositSelection extends Vue {
@@ -113,14 +113,18 @@ export default class TokenDepositSelection extends Vue {
      * Indicates if dropdown expands top.
      */
     public get isExpandingTop(): boolean {
-        return this.$store.state.paymentsModule.paymentsHistory.length === 0;
+        const hasNoTransactionsOrDepositBonuses: boolean =
+            !this.$store.state.paymentsModule.paymentsHistory.some((item: PaymentsHistoryItem) => item.isTransactionOrDeposit(),
+        );
+
+        return hasNoTransactionsOrDepositBonuses && !this.isOnboardingTour;
     }
 
     /**
      * Returns payment options depending on user having his own project.
      */
     public get options(): PaymentAmountOption[] {
-        if (!new ProjectOwning(this.$store).userHasOwnProject() && this.noCreditCards) {
+        if (this.$store.getters.userProjectsCount === 0 && this.noCreditCards) {
             return this.initialPaymentOptions;
         }
 
@@ -145,7 +149,9 @@ export default class TokenDepositSelection extends Vue {
      * closes token amount selection.
      */
     public close(): void {
-        this.$store.dispatch(APP_STATE_ACTIONS.TOGGLE_PAYMENT_SELECTION, false);
+        if (!this.isSelectionShown) return;
+
+        this.$store.dispatch(APP_STATE_ACTIONS.CLOSE_POPUPS);
     }
 
     /**
@@ -187,6 +193,13 @@ export default class TokenDepositSelection extends Vue {
      */
     private get noCreditCards(): boolean {
         return this.$store.state.paymentsModule.creditCards.length === 0;
+    }
+
+    /**
+     * Indicates if app state is in onboarding tour state.
+     */
+    private get isOnboardingTour(): boolean {
+        return this.$route.name === RouteConfig.OnboardingTour.name;
     }
 }
 </script>

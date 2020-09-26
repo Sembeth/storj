@@ -22,6 +22,7 @@ import (
 	"storj.io/common/uuid"
 	"storj.io/private/cfgstruct"
 	"storj.io/private/process"
+	_ "storj.io/private/process/googleprofiler" // This attaches google cloud profiler.
 	"storj.io/private/version"
 	"storj.io/storj/cmd/satellite/reports"
 	"storj.io/storj/pkg/cache"
@@ -37,7 +38,7 @@ import (
 	"storj.io/storj/satellite/satellitedb/dbx"
 )
 
-// Satellite defines satellite configuration
+// Satellite defines satellite configuration.
 type Satellite struct {
 	Database string `help:"satellite database connection string" releaseDefault:"postgres://" devDefault:"postgres://"`
 
@@ -55,7 +56,7 @@ type Satellite struct {
 	satellite.Config
 }
 
-// APIKeysLRUOptions returns a cache.Options based on the APIKeys LRU config
+// APIKeysLRUOptions returns a cache.Options based on the APIKeys LRU config.
 func (s *Satellite) APIKeysLRUOptions() cache.Options {
 	return cache.Options{
 		Expiration: s.DatabaseOptions.APIKeysCache.Expiration,
@@ -63,7 +64,7 @@ func (s *Satellite) APIKeysLRUOptions() cache.Options {
 	}
 }
 
-// RevocationLRUOptions returns a cache.Options based on the Revocations LRU config
+// RevocationLRUOptions returns a cache.Options based on the Revocations LRU config.
 func (s *Satellite) RevocationLRUOptions() cache.Options {
 	return cache.Options{
 		Expiration: s.DatabaseOptions.RevocationsCache.Expiration,
@@ -199,13 +200,6 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE:  cmdCreateCustomerInvoiceCoupons,
 	}
-	createCustomerInvoiceCreditsCmd = &cobra.Command{
-		Use:   "create-invoice-credits [period]",
-		Short: "Adds credits to stripe invoices",
-		Long:  "Creates stripe invoice line items for not consumed credits.",
-		Args:  cobra.ExactArgs(1),
-		RunE:  cmdCreateCustomerInvoiceCredits,
-	}
 	createCustomerInvoicesCmd = &cobra.Command{
 		Use:   "create-invoices [period]",
 		Short: "Creates stripe invoices from pending invoice items",
@@ -225,11 +219,15 @@ var (
 		Long:  "Ensures that we have a stripe customer for every satellite user.",
 		RunE:  cmdStripeCustomer,
 	}
-	migrateCreditsCmd = &cobra.Command{
-		Use:   "migrate-credits",
-		Short: "Migrates credits to Stripe",
-		Long:  "Migrates credits received for STORJ token deposits from Satellite DB to Stripe balance.",
-		RunE:  cmdMigrateCredits,
+	metainfoCmd = &cobra.Command{
+		Use:   "metainfo",
+		Short: "Metainfo commands",
+	}
+	fixOldStyleObjectsCmd = &cobra.Command{
+		Use:   "fix-old-style-objects",
+		Short: "Fixes old-style objects",
+		Long:  "Fixes the old-style objects by adding the number of segments to the metadata.",
+		RunE:  cmdFixOldStyleObjects,
 	}
 
 	runCfg   Satellite
@@ -266,6 +264,9 @@ var (
 	}
 	verifyGracefulExitReceiptCfg struct {
 	}
+	fixOldStyleObjectsCfg struct {
+		DryRun bool `help:"only prints logs for the changes to be made without apply them" default:"true"`
+	}
 	confDir     string
 	identityDir string
 )
@@ -287,6 +288,7 @@ func init() {
 	rootCmd.AddCommand(reportsCmd)
 	rootCmd.AddCommand(compensationCmd)
 	rootCmd.AddCommand(billingCmd)
+	rootCmd.AddCommand(metainfoCmd)
 	reportsCmd.AddCommand(nodeUsageCmd)
 	reportsCmd.AddCommand(partnerAttributionCmd)
 	reportsCmd.AddCommand(gracefulExitCmd)
@@ -297,11 +299,10 @@ func init() {
 	billingCmd.AddCommand(prepareCustomerInvoiceRecordsCmd)
 	billingCmd.AddCommand(createCustomerInvoiceItemsCmd)
 	billingCmd.AddCommand(createCustomerInvoiceCouponsCmd)
-	billingCmd.AddCommand(createCustomerInvoiceCreditsCmd)
 	billingCmd.AddCommand(createCustomerInvoicesCmd)
 	billingCmd.AddCommand(finalizeCustomerInvoicesCmd)
 	billingCmd.AddCommand(stripeCustomerCmd)
-	billingCmd.AddCommand(migrateCreditsCmd)
+	metainfoCmd.AddCommand(fixOldStyleObjectsCmd)
 	process.Bind(runCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
 	process.Bind(runMigrationCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
 	process.Bind(runAPICmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
@@ -320,11 +321,10 @@ func init() {
 	process.Bind(prepareCustomerInvoiceRecordsCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
 	process.Bind(createCustomerInvoiceItemsCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
 	process.Bind(createCustomerInvoiceCouponsCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
-	process.Bind(createCustomerInvoiceCreditsCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
 	process.Bind(createCustomerInvoicesCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
 	process.Bind(finalizeCustomerInvoicesCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
 	process.Bind(stripeCustomerCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
-	process.Bind(migrateCreditsCmd, &runCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
+	process.Bind(fixOldStyleObjectsCmd, &fixOldStyleObjectsCfg, defaults, cfgstruct.ConfDir(confDir), cfgstruct.IdentityDir(identityDir))
 }
 
 func cmdRun(cmd *cobra.Command, args []string) (err error) {
@@ -683,19 +683,6 @@ func cmdCreateCustomerInvoiceCoupons(cmd *cobra.Command, args []string) (err err
 	})
 }
 
-func cmdCreateCustomerInvoiceCredits(cmd *cobra.Command, args []string) (err error) {
-	ctx, _ := process.Ctx(cmd)
-
-	period, err := parseBillingPeriod(args[0])
-	if err != nil {
-		return errs.New("invalid period specified: %v", err)
-	}
-
-	return runBillingCmd(func(payments *stripecoinpayments.Service, _ *dbx.DB) error {
-		return payments.InvoiceApplyCredits(ctx, period)
-	})
-}
-
 func cmdCreateCustomerInvoices(cmd *cobra.Command, args []string) (err error) {
 	ctx, _ := process.Ctx(cmd)
 
@@ -723,12 +710,10 @@ func cmdStripeCustomer(cmd *cobra.Command, args []string) (err error) {
 	return generateStripeCustomers(ctx)
 }
 
-func cmdMigrateCredits(cmd *cobra.Command, args []string) (err error) {
+func cmdFixOldStyleObjects(cmd *cobra.Command, args []string) (err error) {
 	ctx, _ := process.Ctx(cmd)
 
-	return runBillingCmd(func(payments *stripecoinpayments.Service, _ *dbx.DB) error {
-		return payments.MigrateCredits(ctx)
-	})
+	return fixOldStyleObjects(ctx, fixOldStyleObjectsCfg.DryRun)
 }
 
 func main() {
