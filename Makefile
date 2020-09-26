@@ -150,7 +150,7 @@ storagenode-console:
 	gofmt -w -s storagenode/console/consoleassets/bindata.resource.go
 
 .PHONY: images
-images: satellite-image segment-reaper-image storagenode-image uplink-image versioncontrol-image ## Build satellite, segment-reaper, storagenode, uplink, and versioncontrol Docker images
+images: storagenode-image ## Build satellite, segment-reaper, storagenode, uplink, and versioncontrol Docker images
 	echo Built version: ${TAG}
 
 .PHONY: satellite-image
@@ -292,7 +292,7 @@ sign-windows-installer:
 push-images: ## Push Docker images to Docker Hub (jenkins)
 	# images have to be pushed before a manifest can be created
 	# satellite
-	for c in satellite segment-reaper storagenode uplink versioncontrol ; do \
+	for c in storagenode ; do \
 		docker push sembeth/$$c:${TAG}${CUSTOMTAG}-amd64 \
 		&& docker push sembeth/$$c:${TAG}${CUSTOMTAG}-arm32v6 \
 		&& docker push sembeth/$$c:${TAG}${CUSTOMTAG}-aarch64 \
