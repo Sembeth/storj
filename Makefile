@@ -112,11 +112,6 @@ test-docker: ## Run tests in Docker
 	docker-compose up -d --remove-orphans test
 	docker-compose run test make test
 
-.PHONY: check-satellite-config-lock
-check-satellite-config-lock: ## Test if the satellite config file has changed (jenkins)
-	@echo "Running ${@}"
-	@cd scripts; ./check-satellite-config-lock.sh
-
 .PHONY: test-sim-backwards-compatible
 test-sim-backwards-compatible: ## Test uploading a file with lastest release (jenkins)
 	@echo "Running ${@}"
@@ -267,7 +262,7 @@ storagenode_%: storagenode-console
 	$(MAKE) binary-check COMPONENT=storagenode GOARCH=$(word 3, $(subst _, ,$@)) GOOS=$(word 2, $(subst _, ,$@))
 .PHONY: storagenode-updater_%
 storagenode-updater_%:
-	$(MAKE) binary-check COMPONENT=storagenode-updater GOARCH=$(word 3, $(subst _, ,$@)) GOOS=$(word 2, $(subst _, ,$@))
+	EXTRA_ARGS="-tags=service" $(MAKE) binary-check COMPONENT=storagenode-updater GOARCH=$(word 3, $(subst _, ,$@)) GOOS=$(word 2, $(subst _, ,$@))
 .PHONY: uplink_%
 uplink_%:
 	$(MAKE) binary-check COMPONENT=uplink GOARCH=$(word 3, $(subst _, ,$@)) GOOS=$(word 2, $(subst _, ,$@))
@@ -363,17 +358,6 @@ diagrams-graphml:
 	archview -root "storj.io/storj/satellite.Repairer" -skip-class "Peer,Master Database" -trim-prefix storj.io/storj/satellite/ -out satellite-repair.graphml ./satellite/...
 	archview -skip-class "Peer,Master Database" -trim-prefix storj.io/storj/satellite/   -out satellite.graphml    ./satellite/...
 	archview -skip-class "Peer,Master Database" -trim-prefix storj.io/storj/storagenode/ -out storage-node.graphml ./storagenode/...
-
-.PHONY: update-satellite-config-lock
-update-satellite-config-lock: ## Update the satellite config lock file
-	@docker run -ti --rm \
-		-v ${GOPATH}/pkg/mod:/go/pkg/mod \
-		-v ${CURDIR}:/storj \
-		-v $(shell go env GOCACHE):/go-cache \
-		-e "GOCACHE=/go-cache" \
-		-u root:root \
-		golang:${GO_VERSION} \
-		/bin/bash -c "cd /storj/scripts; ./update-satellite-config-lock.sh"
 
 .PHONY: bump-dependencies
 bump-dependencies:
