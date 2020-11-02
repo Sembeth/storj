@@ -7,7 +7,6 @@ import (
 	"context"
 	"io"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 	"storj.io/common/rpc/rpcstatus"
 	"storj.io/common/signing"
 	"storj.io/common/storj"
+	"storj.io/common/sync2"
 	"storj.io/common/testcontext"
 	"storj.io/common/testrand"
 	"storj.io/storj/private/testblobs"
@@ -172,8 +172,10 @@ func TestConcurrentConnections(t *testing.T) {
 
 		var group errgroup.Group
 		concurrentCalls := 4
-		var wg sync.WaitGroup
-		wg.Add(1)
+
+		var mainStarted sync2.Fence
+		defer mainStarted.Release()
+
 		for i := 0; i < concurrentCalls; i++ {
 			group.Go(func() (err error) {
 				// connect to satellite so we initiate the exit.
@@ -185,11 +187,15 @@ func TestConcurrentConnections(t *testing.T) {
 
 				client := pb.NewDRPCSatelliteGracefulExitClient(conn)
 
-				// wait for "main" call to begin
-				wg.Wait()
+				if !mainStarted.Wait(ctx) {
+					return ctx.Err()
+				}
 
 				c, err := client.Process(ctx)
 				require.NoError(t, err)
+				defer func() {
+					err = errs.Combine(err, c.Close())
+				}()
 
 				_, err = c.Recv()
 				require.Error(t, err)
@@ -204,29 +210,35 @@ func TestConcurrentConnections(t *testing.T) {
 		defer ctx.Check(conn.Close)
 
 		client := pb.NewDRPCSatelliteGracefulExitClient(conn)
-		// this connection will immediately return since graceful exit has not been initiated yet
-		c, err := client.Process(ctx)
-		require.NoError(t, err)
-		response, err := c.Recv()
-		require.NoError(t, err)
-		switch response.GetMessage().(type) {
-		case *pb.SatelliteMessage_NotReady:
-		default:
-			t.FailNow()
+
+		{ // this connection will immediately return since graceful exit has not been initiated yet
+			c, err := client.Process(ctx)
+			require.NoError(t, err)
+			response, err := c.Recv()
+			require.NoError(t, err)
+			switch response.GetMessage().(type) {
+			case *pb.SatelliteMessage_NotReady:
+			default:
+				t.FailNow()
+			}
+			require.NoError(t, c.Close())
 		}
 
 		// wait for initial loop to start so we have pieces to transfer
 		satellite.GracefulExit.Chore.Loop.TriggerWait()
 
-		// this connection should not close immediately, since there are pieces to transfer
-		c, err = client.Process(ctx)
-		require.NoError(t, err)
+		{ // this connection should not close immediately, since there are pieces to transfer
+			c, err := client.Process(ctx)
+			require.NoError(t, err)
 
-		_, err = c.Recv()
-		require.NoError(t, err)
+			_, err = c.Recv()
+			require.NoError(t, err)
 
+			// deferring here to ensure that the other connections see the in-use connection.
+			defer ctx.Check(c.Close)
+		}
 		// start receiving from concurrent connections
-		wg.Done()
+		mainStarted.Release()
 
 		err = group.Wait()
 		require.NoError(t, err)
@@ -413,6 +425,8 @@ func TestExitDisqualifiedNodeFailOnStart(t *testing.T) {
 		response, err := processClient.Recv()
 		require.True(t, errs2.IsRPC(err, rpcstatus.FailedPrecondition))
 		require.Nil(t, response)
+
+		require.NoError(t, processClient.Close())
 
 		// disqualified node should fail graceful exit
 		exitStatus, err := satellite.Overlay.DB.GetExitStatus(ctx, exitingNode.ID())

@@ -94,7 +94,8 @@ func (of *fileV0) ReadOne() (info *Info, err error) {
 	limit := &pb.OrderLimit{}
 	err = pb.Unmarshal(limitSerialized, limit)
 	if err != nil {
-		return nil, Error.Wrap(err)
+		// if there is an error unmarshalling, the file must be corrupt
+		return nil, ErrEntryCorrupt.Wrap(err)
 	}
 
 	_, err = io.ReadFull(of.f, sizeBytes[:])
@@ -110,7 +111,8 @@ func (of *fileV0) ReadOne() (info *Info, err error) {
 	order := &pb.Order{}
 	err = pb.Unmarshal(orderSerialized, order)
 	if err != nil {
-		return nil, Error.Wrap(err)
+		// if there is an error unmarshalling, the file must be corrupt
+		return nil, ErrEntryCorrupt.Wrap(err)
 	}
 
 	return &Info{
