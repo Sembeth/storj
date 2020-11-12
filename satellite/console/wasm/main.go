@@ -5,19 +5,12 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"syscall/js"
-	"time"
 
 	"github.com/zeebo/errs"
 
-	"storj.io/common/encryption"
-	"storj.io/common/macaroon"
-	"storj.io/common/storj"
-	"storj.io/common/uuid"
-	"storj.io/uplink"
-	"storj.io/uplink/private/access2"
+	"storj.io/storj/satellite/console"
 )
 
 func main() {
@@ -27,6 +20,7 @@ func main() {
 	<-make(chan bool)
 }
 
+// generateAccessGrant creates a new access grant with the provided api key and encryption passphrase.
 func generateAccessGrant() js.Func {
 	return js.FuncOf(responseHandler(func(this js.Value, args []js.Value) (interface{}, error) {
 		if len(args) < 4 {
@@ -37,7 +31,7 @@ func generateAccessGrant() js.Func {
 		encryptionPassphrase := args[2].String()
 		projectSalt := args[3].String()
 
-		access, err := genAccessGrant(satelliteNodeURL,
+		access, err := console.GenAccessGrant(satelliteNodeURL,
 			apiKey,
 			encryptionPassphrase,
 			projectSalt,
@@ -48,39 +42,6 @@ func generateAccessGrant() js.Func {
 
 		return access, nil
 	}))
-}
-
-func genAccessGrant(satelliteNodeURL, apiKey, encryptionPassphrase, projectID string) (string, error) {
-	parsedAPIKey, err := macaroon.ParseAPIKey(apiKey)
-	if err != nil {
-		return "", err
-	}
-
-	id, err := uuid.FromString(projectID)
-	if err != nil {
-		return "", err
-	}
-
-	const concurrency = 8
-	salt := sha256.Sum256(id[:])
-
-	key, err := encryption.DeriveRootKey([]byte(encryptionPassphrase), salt[:], "", concurrency)
-	if err != nil {
-		return "", err
-	}
-
-	encAccess := access2.NewEncryptionAccessWithDefaultKey(key)
-	encAccess.SetDefaultPathCipher(storj.EncAESGCM)
-	a := &access2.Access{
-		SatelliteAddress: satelliteNodeURL,
-		APIKey:           parsedAPIKey,
-		EncAccess:        encAccess,
-	}
-	accessString, err := a.Serialize()
-	if err != nil {
-		return "", err
-	}
-	return accessString, nil
 }
 
 // setAPIKeyPermission creates a new api key with specific permissions.
@@ -111,7 +72,7 @@ func setAPIKeyPermission() js.Func {
 			return nil, err
 		}
 
-		restrictedKey, err := setPermission(apiKey, bucketNames, permission)
+		restrictedKey, err := console.SetPermission(apiKey, bucketNames, permission)
 		if err != nil {
 			return nil, err
 		}
@@ -123,74 +84,27 @@ func setAPIKeyPermission() js.Func {
 // newPermission creates a new permission object.
 func newPermission() js.Func {
 	return js.FuncOf(responseHandler(func(this js.Value, args []js.Value) (interface{}, error) {
-		p, err := json.Marshal(uplink.Permission{})
+		p, err := json.Marshal(console.Permission{})
 		if err != nil {
 			return nil, err
 		}
 
 		var jsObj map[string]interface{}
-		err = json.Unmarshal(p, &jsObj)
-		if err != nil {
+		if err = json.Unmarshal(p, &jsObj); err != nil {
 			return nil, err
 		}
 		return jsObj, nil
 	}))
 }
 
-func setPermission(key string, buckets []string, permission uplink.Permission) (*macaroon.APIKey, error) {
-	if permission == (uplink.Permission{}) {
-		return nil, errs.New("permission is empty")
-	}
-
-	var notBefore, notAfter *time.Time
-	if !permission.NotBefore.IsZero() {
-		notBefore = &permission.NotBefore
-	}
-	if !permission.NotAfter.IsZero() {
-		notAfter = &permission.NotAfter
-	}
-
-	if notBefore != nil && notAfter != nil && notAfter.Before(*notBefore) {
-		return nil, errs.New("invalid time range")
-	}
-
-	caveat := macaroon.Caveat{
-		DisallowReads:   !permission.AllowDownload,
-		DisallowWrites:  !permission.AllowUpload,
-		DisallowLists:   !permission.AllowList,
-		DisallowDeletes: !permission.AllowDelete,
-		NotBefore:       notBefore,
-		NotAfter:        notAfter,
-	}
-
-	for _, b := range buckets {
-		caveat.AllowedPaths = append(caveat.AllowedPaths, &macaroon.Caveat_Path{
-			Bucket: []byte(b),
-		})
-	}
-
-	apiKey, err := macaroon.ParseAPIKey(key)
-	if err != nil {
-		return nil, err
-	}
-
-	restrictedKey, err := apiKey.Restrict(caveat)
-	if err != nil {
-		return nil, err
-	}
-
-	return restrictedKey, nil
-}
-
-func parsePermission(arg js.Value) (uplink.Permission, error) {
-	var permission uplink.Permission
+func parsePermission(arg js.Value) (console.Permission, error) {
+	var permission console.Permission
 
 	// convert javascript object to a json string
 	jsJSON := js.Global().Get("JSON")
 	p := jsJSON.Call("stringify", arg)
 
-	err := json.Unmarshal([]byte(p.String()), &permission)
-	if err != nil {
+	if err := json.Unmarshal([]byte(p.String()), &permission); err != nil {
 		return permission, err
 	}
 
