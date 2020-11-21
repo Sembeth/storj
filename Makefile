@@ -88,7 +88,7 @@ install-sim: ## install storj-sim
 	## install exact version of storj/gateway
 	mkdir -p .build/gateway-tmp
 	-cd .build/gateway-tmp && go mod init gatewaybuild
-	cd .build/gateway-tmp && GO111MODULE=on go get storj.io/gateway@latest
+	cd .build/gateway-tmp && go mod edit -replace github.com/minio/minio=github.com/storj/minio@storj && GO111MODULE=on go get storj.io/gateway@master
 
 ##@ Test
 
@@ -145,59 +145,59 @@ storagenode-console:
 	gofmt -w -s storagenode/console/consoleassets/bindata.resource.go
 
 .PHONY: images
-images: satellite-image segment-reaper-image storagenode-image uplink-image versioncontrol-image ## Build satellite, segment-reaper, storagenode, uplink, and versioncontrol Docker images
+images: storagenode-image ## Build satellite, segment-reaper, storagenode, uplink, and versioncontrol Docker images
 	echo Built version: ${TAG}
 
 .PHONY: satellite-image
 satellite-image: satellite_linux_arm satellite_linux_arm64 satellite_linux_amd64 ## Build satellite Docker image
-	${DOCKER_BUILD} --pull=true -t storjlabs/satellite:${TAG}${CUSTOMTAG}-amd64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/satellite:${TAG}${CUSTOMTAG}-amd64 \
 		-f cmd/satellite/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/satellite:${TAG}${CUSTOMTAG}-arm32v6 \
+	${DOCKER_BUILD} --pull=true -t sembeth/satellite:${TAG}${CUSTOMTAG}-arm32v6 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm32v6 \
 		-f cmd/satellite/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/satellite:${TAG}${CUSTOMTAG}-aarch64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/satellite:${TAG}${CUSTOMTAG}-aarch64 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=aarch64 \
 		-f cmd/satellite/Dockerfile .
 
 .PHONY: segment-reaper-image
 segment-reaper-image: segment-reaper_linux_amd64 segment-reaper_linux_arm segment-reaper_linux_arm64 ## Build segment-reaper Docker image
-	${DOCKER_BUILD} --pull=true -t storjlabs/segment-reaper:${TAG}${CUSTOMTAG}-amd64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/segment-reaper:${TAG}${CUSTOMTAG}-amd64 \
 		-f cmd/segment-reaper/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/segment-reaper:${TAG}${CUSTOMTAG}-arm32v6 \
+	${DOCKER_BUILD} --pull=true -t sembeth/segment-reaper:${TAG}${CUSTOMTAG}-arm32v6 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm32v6 \
 		-f cmd/segment-reaper/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/segment-reaper:${TAG}${CUSTOMTAG}-aarch64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/segment-reaper:${TAG}${CUSTOMTAG}-aarch64 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=aarch64 \
 		-f cmd/segment-reaper/Dockerfile .
 
 .PHONY: storagenode-image
 storagenode-image: storagenode_linux_arm storagenode_linux_arm64 storagenode_linux_amd64 ## Build storagenode Docker image
-	${DOCKER_BUILD} --pull=true -t storjlabs/storagenode:${TAG}${CUSTOMTAG}-amd64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/storagenode:${TAG}${CUSTOMTAG}-amd64 \
 		-f cmd/storagenode/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/storagenode:${TAG}${CUSTOMTAG}-arm32v6 \
+	${DOCKER_BUILD} --pull=true -t sembeth/storagenode:${TAG}${CUSTOMTAG}-arm32v6 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm32v6 \
 		-f cmd/storagenode/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/storagenode:${TAG}${CUSTOMTAG}-aarch64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/storagenode:${TAG}${CUSTOMTAG}-aarch64 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=aarch64 \
 		-f cmd/storagenode/Dockerfile .
 .PHONY: uplink-image
 uplink-image: uplink_linux_arm uplink_linux_arm64 uplink_linux_amd64 ## Build uplink Docker image
-	${DOCKER_BUILD} --pull=true -t storjlabs/uplink:${TAG}${CUSTOMTAG}-amd64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/uplink:${TAG}${CUSTOMTAG}-amd64 \
 		-f cmd/uplink/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/uplink:${TAG}${CUSTOMTAG}-arm32v6 \
+	${DOCKER_BUILD} --pull=true -t sembeth/uplink:${TAG}${CUSTOMTAG}-arm32v6 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm32v6 \
 		-f cmd/uplink/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/uplink:${TAG}${CUSTOMTAG}-aarch64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/uplink:${TAG}${CUSTOMTAG}-aarch64 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=aarch64 \
 		-f cmd/uplink/Dockerfile .
 .PHONY: versioncontrol-image
 versioncontrol-image: versioncontrol_linux_arm versioncontrol_linux_arm64 versioncontrol_linux_amd64 ## Build versioncontrol Docker image
-	${DOCKER_BUILD} --pull=true -t storjlabs/versioncontrol:${TAG}${CUSTOMTAG}-amd64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/versioncontrol:${TAG}${CUSTOMTAG}-amd64 \
 		-f cmd/versioncontrol/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/versioncontrol:${TAG}${CUSTOMTAG}-arm32v6 \
+	${DOCKER_BUILD} --pull=true -t sembeth/versioncontrol:${TAG}${CUSTOMTAG}-arm32v6 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm32v6 \
 		-f cmd/versioncontrol/Dockerfile .
-	${DOCKER_BUILD} --pull=true -t storjlabs/versioncontrol:${TAG}${CUSTOMTAG}-aarch64 \
+	${DOCKER_BUILD} --pull=true -t sembeth/versioncontrol:${TAG}${CUSTOMTAG}-aarch64 \
 		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=aarch64 \
 		-f cmd/versioncontrol/Dockerfile .
 
@@ -287,19 +287,19 @@ sign-windows-installer:
 push-images: ## Push Docker images to Docker Hub (jenkins)
 	# images have to be pushed before a manifest can be created
 	# satellite
-	for c in satellite segment-reaper storagenode uplink versioncontrol ; do \
-		docker push storjlabs/$$c:${TAG}${CUSTOMTAG}-amd64 \
-		&& docker push storjlabs/$$c:${TAG}${CUSTOMTAG}-arm32v6 \
-		&& docker push storjlabs/$$c:${TAG}${CUSTOMTAG}-aarch64 \
+	for c in storagenode ; do \
+		docker push sembeth/$$c:${TAG}${CUSTOMTAG}-amd64 \
+		&& docker push sembeth/$$c:${TAG}${CUSTOMTAG}-arm32v6 \
+		&& docker push sembeth/$$c:${TAG}${CUSTOMTAG}-aarch64 \
 		&& for t in ${TAG}${CUSTOMTAG} ${LATEST_TAG}; do \
-			docker manifest create storjlabs/$$c:$$t \
-			storjlabs/$$c:${TAG}${CUSTOMTAG}-amd64 \
-			storjlabs/$$c:${TAG}${CUSTOMTAG}-arm32v6 \
-			storjlabs/$$c:${TAG}${CUSTOMTAG}-aarch64 \
-			&& docker manifest annotate storjlabs/$$c:$$t storjlabs/$$c:${TAG}${CUSTOMTAG}-amd64 --os linux --arch amd64 \
-			&& docker manifest annotate storjlabs/$$c:$$t storjlabs/$$c:${TAG}${CUSTOMTAG}-arm32v6 --os linux --arch arm --variant v6 \
-			&& docker manifest annotate storjlabs/$$c:$$t storjlabs/$$c:${TAG}${CUSTOMTAG}-aarch64 --os linux --arch arm64 \
-			&& docker manifest push --purge storjlabs/$$c:$$t \
+			docker manifest create sembeth/$$c:$$t \
+			sembeth/$$c:${TAG}${CUSTOMTAG}-amd64 \
+			sembeth/$$c:${TAG}${CUSTOMTAG}-arm32v6 \
+			sembeth/$$c:${TAG}${CUSTOMTAG}-aarch64 \
+			&& docker manifest annotate sembeth/$$c:$$t sembeth/$$c:${TAG}${CUSTOMTAG}-amd64 --os linux --arch amd64 \
+			&& docker manifest annotate sembeth/$$c:$$t sembeth/$$c:${TAG}${CUSTOMTAG}-arm32v6 --os linux --arch arm --variant v6 \
+			&& docker manifest annotate sembeth/$$c:$$t sembeth/$$c:${TAG}${CUSTOMTAG}-aarch64 --os linux --arch arm64 \
+			&& docker manifest push --purge sembeth/$$c:$$t \
 		; done \
 	; done
 
@@ -322,11 +322,11 @@ binaries-clean: ## Remove all local release binaries (jenkins)
 
 .PHONY: clean-images
 clean-images:
-	-docker rmi storjlabs/satellite:${TAG}${CUSTOMTAG}
-	-docker rmi storjlabs/storagenode:${TAG}${CUSTOMTAG}
-	-docker rmi storjlabs/uplink:${TAG}${CUSTOMTAG}
-	-docker rmi storjlabs/versioncontrol:${TAG}${CUSTOMTAG}
-	-docker rmi storjlabs/segment-reaper:${TAG}${CUSTOMTAG}
+	-docker rmi sembeth/satellite:${TAG}${CUSTOMTAG}
+	-docker rmi sembeth/storagenode:${TAG}${CUSTOMTAG}
+	-docker rmi sembeth/uplink:${TAG}${CUSTOMTAG}
+	-docker rmi sembeth/versioncontrol:${TAG}${CUSTOMTAG}
+	-docker rmi sembeth/segment-reaper:${TAG}${CUSTOMTAG}
 
 .PHONY: test-docker-clean
 test-docker-clean: ## Clean up Docker environment used in test-docker target
