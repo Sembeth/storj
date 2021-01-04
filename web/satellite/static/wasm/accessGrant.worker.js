@@ -15,7 +15,10 @@ const instantiateStreaming = WebAssembly.instantiateStreaming || async function 
     return await WebAssembly.instantiate(source, importObject);
 };
 const response = fetch('/static/static/wasm/access.wasm');
-instantiateStreaming(response, go.importObject).then(result => go.run(result.instance)).catch(err => self.postMessage(new Error(err.message)));
+instantiateStreaming(response, go.importObject).then(result => {
+    go.run(result.instance)
+    self.postMessage('configured');
+}).catch(err => self.postMessage(new Error(err.message)));
 
 self.onmessage = function (event) {
     const data = event.data;
@@ -26,8 +29,7 @@ self.onmessage = function (event) {
             apiKey = data.apiKey;
             const passphrase = data.passphrase;
             const projectID = data.projectID;
-            const satelliteName = data.satelliteName;
-            const nodeURL = getSatelliteNodeURL(satelliteName);
+            const nodeURL = data.satelliteNodeURL;
 
             result = self.generateAccessGrant(nodeURL, apiKey, passphrase, projectID);
 
@@ -60,16 +62,3 @@ self.onmessage = function (event) {
             self.postMessage(new Error('provided message event type is not supported'));
     }
 };
-
-function getSatelliteNodeURL(satellite) {
-    switch (satellite) {
-        case 'Asia-East-1':
-            return '121RTSDpyNZVcEU84Ticf2L1ntiuUimbWgfATz21tuvgk3vzoA6@asia-east-1.tardigrade.io:7777';
-        case 'Europe-West-1':
-            return '12L9ZFwhzVpuEKMUNUqkaTLGzwY9G24tbiigLiXpmZWKwmcNDDs@europe-west-1.tardigrade.io:7777';
-        case 'US-Central-1':
-            return '12EayRS2V1kEsWESU9QMRseFhdxYxKicsiFmxrsLZHeLUtdps3S@us-central-1.tardigrade.io:7777';
-        default:
-            return '12jHxTS7txdGgzeaXCSMR6yomWnD7nJcpz8QB7GrqxTAgftE5Y2@127.0.0.1:10000';
-    }
-}

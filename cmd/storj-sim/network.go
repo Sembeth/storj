@@ -43,7 +43,7 @@ const (
 )
 
 var (
-	defaultAccess = "17jgVrPRktsquJQFzpT533WHmZnF6QDkuv8w3Ry5XPzAkh3vj7D1dbJ5MatQRiyRE2ZEiA1Y6fYnhoWqr2n7VgycdXSUPz1QzhthBsHqGXCrRcjSp8RbbVE1VJqDej9nLgB5YDPh3Q5JrVjQeMe9saHAL5rE5tUYJAeynVdre8HeTJMXcwau5"
+	defaultAccess = "12edqtGZnqQo6QHwTB92EDqg9B1WrWn34r7ALu94wkqXL4eXjBNnVr6F5W7GhJjVqJCqxpFERmDR1dhZWyMt3Qq5zwrE9yygXeT6kBoS9AfiPuwB6kNjjxepg5UtPPtp4VLp9mP5eeyobKQRD5TsEsxTGhxamsrHvGGBPrZi8DeLtNYFMRTV6RyJVxpYX6MrPCw9HVoDQbFs7VcPeeRxRMQttSXL3y33BJhkqJ6ByFviEquaX5R2wjQT2Kx"
 )
 
 const (
@@ -90,7 +90,7 @@ func networkExec(flags *Flags, args []string, command string) error {
 
 	if command == "setup" {
 		if flags.Postgres == "" {
-			return errors.New("postgres connection URL is required for running storj-sim. Example: `storj-sim network setup --postgres=<connection URL>`.\nSee docs for more details https://github.com/storj/docs/blob/master/Test-network.md#running-tests-with-postgres")
+			return errors.New("postgres connection URL is required for running storj-sim. Example: `storj-sim network setup --postgres=<connection URL>`.\nSee docs for more details https://github.com/storj/docs/blob/main/Test-network.md#running-tests-with-postgres")
 		}
 
 		identities, err := identitySetup(processes)
@@ -355,7 +355,6 @@ func newNetwork(flags *Flags) (*Processes, error) {
 			apiProcess.Arguments["setup"] = append(apiProcess.Arguments["setup"],
 				"--database", masterDBURL,
 				"--metainfo.database-url", metainfoDBURL,
-				"--orders.include-encrypted-metadata=true",
 				"--orders.encryption-keys", "0100000000000000=0100000000000000000000000000000000000000000000000000000000000000",
 			)
 		}
@@ -394,7 +393,6 @@ func newNetwork(flags *Flags) (*Processes, error) {
 		coreProcess.Arguments = withCommon(apiProcess.Directory, Arguments{
 			"run": {
 				"--debug.addr", net.JoinHostPort(host, port(satellitePeer, i, debugPeerHTTP)),
-				"--orders.include-encrypted-metadata=true",
 				"--orders.encryption-keys", "0100000000000000=0100000000000000000000000000000000000000000000000000000000000000",
 			},
 		})
@@ -423,7 +421,6 @@ func newNetwork(flags *Flags) (*Processes, error) {
 			"run": {
 				"repair",
 				"--debug.addr", net.JoinHostPort(host, port(satellitePeer, i, debugRepairerHTTP)),
-				"--orders.include-encrypted-metadata=true",
 				"--orders.encryption-keys", "0100000000000000=0100000000000000000000000000000000000000000000000000000000000000",
 			},
 		})

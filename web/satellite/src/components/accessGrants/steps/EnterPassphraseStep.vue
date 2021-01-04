@@ -2,7 +2,7 @@
 // See LICENSE for copying information.
 
 <template>
-    <div class="enter-passphrase">
+    <div class="enter-passphrase" :class="{ 'border-radius': isOnboardingTour }">
         <BackIcon class="enter-passphrase__back-icon" @click="onBackClick"/>
         <h1 class="enter-passphrase__title">Enter Encryption Passphrase</h1>
         <p class="enter-passphrase__sub-title">Enter the passphrase you most recently generated for Access Grants</p>
@@ -44,6 +44,7 @@ import { MetaUtils } from '@/utils/meta';
 })
 export default class EnterPassphraseStep extends Vue {
     private key: string = '';
+    private restrictedKey: string = '';
     private access: string = '';
     private worker: Worker;
     private isLoading: boolean = true;
@@ -56,27 +57,16 @@ export default class EnterPassphraseStep extends Vue {
      * Sets local key from props value.
      */
     public async mounted(): Promise<void> {
-        if (!this.$route.params.key) {
+        if (!this.$route.params.key && !this.$route.params.restrictedKey) {
             await this.$router.push(RouteConfig.AccessGrants.with(RouteConfig.CreateAccessGrant.with(RouteConfig.NameStep)).path);
+
+            return;
         }
 
         this.key = this.$route.params.key;
-        this.worker = await new Worker('/static/static/wasm/webWorker.js');
-        this.worker.onmessage = (event: MessageEvent) => {
-            const data = event.data;
-            if (data.error) {
-                this.$notify.error(data.error);
+        this.restrictedKey = this.$route.params.restrictedKey;
 
-                return;
-            }
-
-            this.access = data.value;
-
-            this.$notify.success('Access Grant was generated successfully');
-        };
-        this.worker.onerror = (error: ErrorEvent) => {
-            this.$notify.error(error.message);
-        };
+        this.setWorker();
 
         this.isLoading = false;
     }
@@ -103,14 +93,14 @@ export default class EnterPassphraseStep extends Vue {
 
         this.isLoading = true;
 
-        const satelliteName = MetaUtils.getMetaContent('satellite-name');
+        const satelliteNodeURL = MetaUtils.getMetaContent('satellite-nodeurl');
 
         this.worker.postMessage({
             'type': 'GenerateAccess',
-            'apiKey': this.key,
+            'apiKey': this.restrictedKey,
             'passphrase': this.passphrase,
             'projectID': this.$store.getters.selectedProject.id,
-            'satelliteName': satelliteName,
+            'satelliteNodeURL': satelliteNodeURL,
         });
 
         // Give time for web worker to return value.
@@ -122,9 +112,33 @@ export default class EnterPassphraseStep extends Vue {
                 params: {
                     access: this.access,
                     key: this.key,
+                    restrictedKey: this.restrictedKey,
                 },
             });
         }, 1000);
+    }
+
+    /**
+     * Sets local worker with worker instantiated in store.
+     * Also sets worker's onmessage and onerror logic.
+     */
+    public setWorker(): void {
+        this.worker = this.$store.state.accessGrantsModule.accessGrantsWebWorker;
+        this.worker.onmessage = (event: MessageEvent) => {
+            const data = event.data;
+            if (data.error) {
+                this.$notify.error(data.error);
+
+                return;
+            }
+
+            this.access = data.value;
+
+            this.$notify.success('Access Grant was generated successfully');
+        };
+        this.worker.onerror = (error: ErrorEvent) => {
+            this.$notify.error(error.message);
+        };
     }
 
     /**
@@ -190,6 +204,10 @@ export default class EnterPassphraseStep extends Vue {
         &__next-button {
             margin-top: 93px;
         }
+    }
+
+    .border-radius {
+        border-radius: 6px;
     }
 </style>
 

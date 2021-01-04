@@ -89,7 +89,7 @@ compensation.withheld-percents: 75,75,75,50,50,50,25,25,25,0,0,0,0,0,0
 # console.frame-ancestors: tardigrade.io
 
 # url link for gateway credentials requests
-# console.gateway-credentials-request-url: ""
+# console.gateway-credentials-request-url: https://auth.tardigradeshare.io
 
 # url link to general request page
 # console.general-request-url: https://support.tardigrade.io/hc/en-us/requests/new?ticket_form_id=360000379291
@@ -159,12 +159,6 @@ contact.external-address: ""
 
 # macaroon revocation cache expiration
 # database-options.revocations-cache.expiration: 5m0s
-
-# number of records to delete per delete execution. 0 indicates no limit. applicable to cockroach DB only.
-# db-cleanup.batch-size: 1000
-
-# how often to delete expired serial numbers
-# db-cleanup.serials-interval: 4h0m0s
 
 # Maximum Database Connection Lifetime, -1ns means the stdlib default
 # db.conn_max_lifetime: 30m0s
@@ -377,10 +371,10 @@ identity.key-path: /root/.local/share/storj/identity/satellite/identity.key
 # metainfo.piece-deletion.request-timeout: 1m0s
 
 # the default bandwidth usage limit
-# metainfo.project-limits.default-max-bandwidth: 50.00 GB
+# metainfo.project-limits.default-max-bandwidth: 500.00 GB
 
 # the default storage usage limit
-# metainfo.project-limits.default-max-usage: 50.00 GB
+# metainfo.project-limits.default-max-usage: 500.00 GB
 
 # max bucket count for a project.
 # metainfo.project-limits.max-buckets: 100
@@ -433,9 +427,6 @@ identity.key-path: /root/.local/share/storj/identity/satellite/identity.key
 # how often to flush the rollups write cache to the database
 # orders.flush-interval: 1m0s
 
-# include encrypted metadata in the order limit
-# orders.include-encrypted-metadata: false
-
 # how many concurrent orders to process at once. zero is unlimited
 # orders.orders-semaphore-size: 2
 
@@ -468,6 +459,12 @@ identity.key-path: /root/.local/share/storj/identity/satellite/identity.key
 
 # how stale the node selection cache can be
 # overlay.node-selection-cache.staleness: 3m0s
+
+# default duration for AS OF SYSTEM TIME
+# overlay.node.as-of-system-time.default-interval: -10s
+
+# enables the use of the AS OF SYSTEM TIME feature in CRDB
+# overlay.node.as-of-system-time.enabled: true
 
 # the number of times a node has been audited to not be considered a New Node
 # overlay.node.audit-count: 100
