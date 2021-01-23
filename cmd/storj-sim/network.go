@@ -51,10 +51,11 @@ const (
 	// to create a port with a consistent format for storj-sim services.
 
 	// Peer classes.
-	satellitePeer      = 0
-	gatewayPeer        = 1
-	versioncontrolPeer = 2
-	storagenodePeer    = 3
+	satellitePeer       = 0
+	satellitePeerWorker = 4
+	gatewayPeer         = 1
+	versioncontrolPeer  = 2
+	storagenodePeer     = 3
 
 	// Endpoints.
 	publicRPC   = 0
@@ -64,12 +65,15 @@ const (
 	debugHTTP   = 9
 
 	// Satellite specific constants.
-	redisPort         = 4
-	adminHTTP         = 5
-	debugAdminHTTP    = 6
-	debugPeerHTTP     = 7
-	debugRepairerHTTP = 8
-	debugGCHTTP       = 10
+	redisPort      = 4
+	adminHTTP      = 5
+	debugAdminHTTP = 6
+	debugCoreHTTP  = 7
+
+	// Satellite worker specific constants.
+	debugMigrationHTTP = 0
+	debugRepairerHTTP  = 1
+	debugGCHTTP        = 2
 )
 
 // port creates a port with a consistent format for storj-sim services.
@@ -169,8 +173,14 @@ func networkTest(flags *Flags, command string, args []string) error {
 
 	ctx, cancel := NewCLIContext(context.Background())
 
-	var group errgroup.Group
-	processes.Start(ctx, &group, "run")
+	var group *errgroup.Group
+	if processes.FailFast {
+		group, ctx = errgroup.WithContext(ctx)
+	} else {
+		group = &errgroup.Group{}
+	}
+
+	processes.Start(ctx, group, "run")
 
 	for _, process := range processes.List {
 		process.Status.Started.Wait(ctx)
@@ -218,14 +228,19 @@ func newNetwork(flags *Flags) (*Processes, error) {
 		common := []string{"--metrics.app-suffix", "sim", "--log.level", "debug", "--config-dir", dir}
 		if flags.IsDev {
 			common = append(common, "--defaults", "dev")
+		} else {
+			common = append(common, "--defaults", "release")
 		}
 		for command, args := range all {
-			all[command] = append(append(common, command), args...)
+			full := append([]string{}, common...)
+			full = append(full, command)
+			full = append(full, args...)
+			all[command] = full
 		}
 		return all
 	}
 
-	processes := NewProcesses(flags.Directory)
+	processes := NewProcesses(flags.Directory, flags.FailFast)
 
 	var host = flags.Host
 	versioncontrol := processes.New(Info{
@@ -315,13 +330,17 @@ func newNetwork(flags *Flags) (*Processes, error) {
 		apiProcess.Arguments = withCommon(apiProcess.Directory, Arguments{
 			"setup": {
 				"--identity-dir", apiProcess.Directory,
+
 				"--console.address", net.JoinHostPort(host, port(satellitePeer, i, publicHTTP)),
 				"--console.static-dir", filepath.Join(storjRoot, "web/satellite/"),
+				"--console.auth-token-secret", "my-suppa-secret-key",
 				"--console.open-registration-enabled",
 				"--console.rate-limit.burst", "100",
+
 				"--marketing.base-url", "",
 				"--marketing.address", net.JoinHostPort(host, port(satellitePeer, i, privateHTTP)),
 				"--marketing.static-dir", filepath.Join(storjRoot, "web/marketing/"),
+
 				"--server.address", apiProcess.Address,
 				"--server.private-address", net.JoinHostPort(host, port(satellitePeer, i, privateRPC)),
 
@@ -379,7 +398,7 @@ func newNetwork(flags *Flags) (*Processes, error) {
 		migrationProcess.Arguments = withCommon(apiProcess.Directory, Arguments{
 			"run": {
 				"migration",
-				"--debug.addr", net.JoinHostPort(host, port(satellitePeer, i, debugPeerHTTP)),
+				"--debug.addr", net.JoinHostPort(host, port(satellitePeerWorker, i, debugMigrationHTTP)),
 			},
 		})
 		apiProcess.WaitForExited(migrationProcess)
@@ -392,7 +411,7 @@ func newNetwork(flags *Flags) (*Processes, error) {
 		})
 		coreProcess.Arguments = withCommon(apiProcess.Directory, Arguments{
 			"run": {
-				"--debug.addr", net.JoinHostPort(host, port(satellitePeer, i, debugPeerHTTP)),
+				"--debug.addr", net.JoinHostPort(host, port(satellitePeer, i, debugCoreHTTP)),
 				"--orders.encryption-keys", "0100000000000000=0100000000000000000000000000000000000000000000000000000000000000",
 			},
 		})
@@ -420,7 +439,7 @@ func newNetwork(flags *Flags) (*Processes, error) {
 		repairProcess.Arguments = withCommon(apiProcess.Directory, Arguments{
 			"run": {
 				"repair",
-				"--debug.addr", net.JoinHostPort(host, port(satellitePeer, i, debugRepairerHTTP)),
+				"--debug.addr", net.JoinHostPort(host, port(satellitePeerWorker, i, debugRepairerHTTP)),
 				"--orders.encryption-keys", "0100000000000000=0100000000000000000000000000000000000000000000000000000000000000",
 			},
 		})
@@ -434,7 +453,7 @@ func newNetwork(flags *Flags) (*Processes, error) {
 		garbageCollectionProcess.Arguments = withCommon(apiProcess.Directory, Arguments{
 			"run": {
 				"garbage-collection",
-				"--debug.addr", net.JoinHostPort(host, port(satellitePeer, i, debugGCHTTP)),
+				"--debug.addr", net.JoinHostPort(host, port(satellitePeerWorker, i, debugGCHTTP)),
 			},
 		})
 		garbageCollectionProcess.WaitForExited(migrationProcess)
@@ -635,7 +654,7 @@ func newNetwork(flags *Flags) (*Processes, error) {
 }
 
 func identitySetup(network *Processes) (*Processes, error) {
-	processes := NewProcesses(network.Directory)
+	processes := NewProcesses(network.Directory, network.FailFast)
 
 	for _, process := range network.List {
 		if process.Info.Executable == "gateway" || process.Info.Executable == "redis-server" {

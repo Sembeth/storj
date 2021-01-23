@@ -51,7 +51,7 @@ import (
 	"storj.io/storj/satellite/referrals"
 	"storj.io/storj/satellite/repair/irreparable"
 	"storj.io/storj/satellite/rewards"
-	"storj.io/storj/satellite/snopayout"
+	"storj.io/storj/satellite/snopayouts"
 )
 
 // API is the satellite API process.
@@ -65,8 +65,9 @@ type API struct {
 	Servers  *lifecycle.Group
 	Services *lifecycle.Group
 
-	Dialer rpc.Dialer
-	Server *server.Server
+	Dialer          rpc.Dialer
+	Server          *server.Server
+	ExternalAddress string
 
 	Version struct {
 		Chore   *checker.Chore
@@ -156,9 +157,9 @@ type API struct {
 	}
 
 	SnoPayout struct {
-		Endpoint *snopayout.Endpoint
-		Service  *snopayout.Service
-		DB       snopayout.DB
+		Endpoint *snopayouts.Endpoint
+		Service  *snopayouts.Service
+		DB       snopayouts.DB
 	}
 
 	GracefulExit struct {
@@ -170,10 +171,12 @@ type API struct {
 func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 	pointerDB metainfo.PointerDB, revocationDB extensions.RevocationDB, liveAccounting accounting.Cache, rollupsWriteCache *orders.RollupsWriteCache,
 	config *Config, versionInfo version.Info, atomicLogLevel *zap.AtomicLevel) (*API, error) {
+
 	peer := &API{
-		Log:      log,
-		Identity: full,
-		DB:       db,
+		Log:             log,
+		Identity:        full,
+		DB:              db,
+		ExternalAddress: config.Contact.ExternalAddress,
 
 		Servers:  lifecycle.NewGroup(log.Named("servers")),
 		Services: lifecycle.NewGroup(log.Named("services")),
@@ -233,6 +236,11 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 			return nil, errs.Combine(err, peer.Close())
 		}
 
+		if peer.ExternalAddress == "" {
+			// not ideal, but better than nothing
+			peer.ExternalAddress = peer.Server.Addr().String()
+		}
+
 		peer.Servers.Add(lifecycle.Item{
 			Name: "server",
 			Run: func(ctx context.Context) error {
@@ -265,11 +273,6 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 	}
 
 	{ // setup contact service
-		c := config.Contact
-		if c.ExternalAddress == "" {
-			c.ExternalAddress = peer.Addr()
-		}
-
 		pbVersion, err := versionInfo.Proto()
 		if err != nil {
 			return nil, errs.Combine(err, peer.Close())
@@ -279,7 +282,7 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 			Node: pb.Node{
 				Id: peer.ID(),
 				Address: &pb.NodeAddress{
-					Address: c.ExternalAddress,
+					Address: peer.Addr(),
 				},
 			},
 			Type:    pb.NodeType_SATELLITE,
@@ -336,10 +339,6 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 			peer.Orders.DB,
 			peer.DB.Buckets(),
 			config.Orders,
-			&pb.NodeAddress{
-				Transport: pb.NodeTransport_TCP_TLS_GRPC,
-				Address:   config.Contact.ExternalAddress,
-			},
 		)
 		if err != nil {
 			return nil, errs.Combine(err, peer.Close())
@@ -656,11 +655,11 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 
 	{ // setup SnoPayout endpoint
 		peer.SnoPayout.DB = peer.DB.SnoPayout()
-		peer.SnoPayout.Service = snopayout.NewService(
-			peer.Log.Named("payout:service"),
+		peer.SnoPayout.Service = snopayouts.NewService(
+			peer.Log.Named("payouts:service"),
 			peer.SnoPayout.DB)
-		peer.SnoPayout.Endpoint = snopayout.NewEndpoint(
-			peer.Log.Named("payout:endpoint"),
+		peer.SnoPayout.Endpoint = snopayouts.NewEndpoint(
+			peer.Log.Named("payouts:endpoint"),
 			peer.DB.StoragenodeAccounting(),
 			peer.Overlay.DB,
 			peer.SnoPayout.Service)
@@ -717,7 +716,9 @@ func (peer *API) Close() error {
 func (peer *API) ID() storj.NodeID { return peer.Identity.ID }
 
 // Addr returns the public address.
-func (peer *API) Addr() string { return peer.Server.Addr().String() }
+func (peer *API) Addr() string {
+	return peer.ExternalAddress
+}
 
 // URL returns the storj.NodeURL.
 func (peer *API) URL() storj.NodeURL {

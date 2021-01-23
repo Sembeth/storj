@@ -33,6 +33,7 @@ import (
 	"storj.io/common/storj"
 	"storj.io/common/uuid"
 	"storj.io/storj/private/web"
+	"storj.io/storj/satellite/accounting"
 	"storj.io/storj/satellite/console"
 	"storj.io/storj/satellite/console/consoleauth"
 	"storj.io/storj/satellite/console/consoleweb/consoleapi"
@@ -59,7 +60,7 @@ var (
 
 // Config contains configuration for console web server.
 type Config struct {
-	Address         string `help:"server address of the graphql api gateway and frontend app" devDefault:"127.0.0.1:8081" releaseDefault:":10100"`
+	Address         string `help:"server address of the graphql api gateway and frontend app" devDefault:"" releaseDefault:":10100"`
 	StaticDir       string `help:"path to static resources" default:""`
 	ExternalAddress string `help:"external endpoint of the satellite if hosted" default:""`
 
@@ -607,6 +608,7 @@ func (server *Server) projectUsageLimitsHandler(w http.ResponseWriter, r *http.R
 			Error string `json:"error"`
 		}
 
+		// N.B. we are probably leaking internal details to the client
 		jsonError.Error = err.Error()
 
 		if err := json.NewEncoder(w).Encode(jsonError); err != nil {
@@ -618,6 +620,8 @@ func (server *Server) projectUsageLimitsHandler(w http.ResponseWriter, r *http.R
 		switch {
 		case console.ErrUnauthorized.Has(err):
 			handleError(http.StatusUnauthorized, err)
+		case accounting.ErrInvalidArgument.Has(err):
+			handleError(http.StatusBadRequest, err)
 		default:
 			handleError(http.StatusInternalServerError, err)
 		}

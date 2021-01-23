@@ -1,4 +1,4 @@
-GO_VERSION ?= 1.15.6
+GO_VERSION ?= 1.15.7
 GOOS ?= linux
 GOARCH ?= amd64
 GOPATH ?= $(shell go env GOPATH)
@@ -73,6 +73,11 @@ build-storagenode-npm:
 
 ##@ Simulator
 
+# Allow the caller to set GATEWAYPATH if desired. This controls where the new
+# go module is created to install the specific gateway version.
+ifndef GATEWAYPATH
+GATEWAYPATH=.build/gateway-tmp
+endif
 .PHONY: install-sim
 install-sim: ## install storj-sim
 	@echo "Running ${@}"
@@ -86,9 +91,9 @@ install-sim: ## install storj-sim
 		storj.io/storj/cmd/certificates
 
 	## install exact version of storj/gateway
-	mkdir -p .build/gateway-tmp
-	-cd .build/gateway-tmp && go mod init gatewaybuild
-	cd .build/gateway-tmp && GO111MODULE=on go get storj.io/gateway@latest
+	mkdir -p ${GATEWAYPATH}
+	-cd ${GATEWAYPATH} && go mod init gatewaybuild
+	cd ${GATEWAYPATH} && GO111MODULE=on go get storj.io/gateway@latest
 
 ##@ Test
 
@@ -123,6 +128,11 @@ check-monitoring: ## Check for locked monkit calls that have changed
 	@check-monitoring ./... | diff -U0 ./monkit.lock - \
 	|| (echo "Locked monkit metrics have been changed. Notify #data-science and run \`go run github.com/storj/ci/check-monitoring -out monkit.lock ./...\` to update monkit.lock file." \
 	&& exit 1)
+
+.PHONY: test-wasm-size
+test-wasm-size: ## Test that the built .wasm code has not increased in size
+	@echo "Running ${@}"
+	@./scripts/test-wasm-size.sh
 
 ##@ Build
 
