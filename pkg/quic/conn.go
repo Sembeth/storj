@@ -15,6 +15,7 @@ import (
 
 	"storj.io/common/memory"
 	"storj.io/common/rpc"
+	"storj.io/storj/pkg/quic/qtls"
 )
 
 // Conn is a wrapper around a quic connection and fulfills net.Conn interface.
@@ -71,7 +72,7 @@ func (c *Conn) getStream() (quic.Stream, error) {
 
 // ConnectionState converts quic session state to tls connection state and returns tls state.
 func (c *Conn) ConnectionState() tls.ConnectionState {
-	return c.session.ConnectionState().ConnectionState
+	return qtls.ToTLSConnectionState(c.session.ConnectionState())
 }
 
 // Close closes the quic connection.
@@ -174,9 +175,9 @@ type closeTrackingConn struct {
 	rpc.ConnectorConn
 }
 
-// trackClose wraps the conn and sets a  finalizer on the returned value to
+// TrackClose wraps the conn and sets a  finalizer on the returned value to
 // close the conn and monitor that it was leaked.
-func trackClose(conn rpc.ConnectorConn) rpc.ConnectorConn {
+func TrackClose(conn rpc.ConnectorConn) rpc.ConnectorConn {
 	tracked := &closeTrackingConn{ConnectorConn: conn}
 	runtime.SetFinalizer(tracked, (*closeTrackingConn).finalize)
 	return tracked
