@@ -38,8 +38,6 @@ export default class RegisterArea extends Vue {
 
     // tardigrade logic
     private secret: string = '';
-    private referralToken: string = '';
-    private refUserId: string = '';
     private gtm: GoogleTagManager;
     private satellitesString: string;
     private partneredSatellites: string[];
@@ -50,12 +48,18 @@ export default class RegisterArea extends Vue {
     private password: string = '';
     private repeatedPassword: string = '';
 
+    // Only for beta sats (like US2).
+    private areBetaTermsAccepted: boolean = false;
+
     private fullNameError: string = '';
     private emailError: string = '';
     private passwordError: string = '';
     private repeatedPasswordError: string = '';
     private isTermsAcceptedError: boolean = false;
     private isLoading: boolean = false;
+
+    // Only for beta sats (like US2).
+    private areBetaTermsAcceptedError: boolean = false;
 
     private readonly auth: AuthHttpApi = new AuthHttpApi();
 
@@ -97,32 +101,13 @@ export default class RegisterArea extends Vue {
      * Lifecycle hook after initial render.
      * Sets up variables from route params.
      */
-    public async mounted(): Promise<void> {
+    public mounted(): void {
         if (this.$route.query.token) {
             this.secret = this.$route.query.token.toString();
         }
 
-        if (this.$route.query.referralToken) {
-            this.referralToken = this.$route.query.referralToken.toString();
-        }
-
         if (this.$route.query.partner) {
             this.user.partner = this.$route.query.partner.toString();
-        }
-
-        const { ids = '' } = this.$route.params;
-        let decoded = '';
-        try {
-            decoded = atob(ids);
-        } catch (error) {
-            await this.$notify.error('Invalid Referral URL');
-
-            return;
-        }
-        const referralIds = ids ? JSON.parse(decoded) : undefined;
-        if (referralIds) {
-            this.user.partnerId = referralIds.partnerId;
-            this.refUserId = referralIds.userId;
         }
     }
 
@@ -230,6 +215,13 @@ export default class RegisterArea extends Vue {
     }
 
     /**
+     * Indicates if satellite is in beta.
+     */
+    public get isBetaSatellite(): boolean {
+        return this.$store.state.appStateModule.isBetaSatellite;
+    }
+
+    /**
      * Validates input values to satisfy expected rules.
      */
     private validateFields(): boolean {
@@ -260,6 +252,12 @@ export default class RegisterArea extends Vue {
             isNoErrors = false;
         }
 
+        // only for beta US2 sats.
+        if (this.isBetaSatellite && !this.areBetaTermsAccepted) {
+            this.areBetaTermsAcceptedError = true;
+            isNoErrors = false;
+        }
+
         return isNoErrors;
     }
 
@@ -268,22 +266,20 @@ export default class RegisterArea extends Vue {
      */
     private async createUser(): Promise<void> {
         try {
-            this.userId = this.referralToken ?
-                await this.auth.referralRegister(this.user, this.referralToken) :
-                await this.auth.register(this.user, this.secret, this.refUserId);
+            this.userId = await this.auth.register(this.user, this.secret);
 
             LocalData.setUserId(this.userId);
 
             this.$segment.identify(this.userId, {
                 email: this.$store.getters.user.email,
-                referralToken: this.referralToken,
             });
 
-            if (this.partneredSatellites.includes(this.satelliteName)) {
-                const verificationPageURL: string = MetaUtils.getMetaContent('verification-page-url');
+            const verificationPageURL: string = MetaUtils.getMetaContent('verification-page-url');
+            if (verificationPageURL) {
+                const externalAddress: string = MetaUtils.getMetaContent('external-address');
                 const url = new URL(verificationPageURL);
 
-                url.searchParams.append('name', this.satelliteName);
+                url.searchParams.append('redirect', externalAddress);
 
                 window.top.location.href = url.href;
 

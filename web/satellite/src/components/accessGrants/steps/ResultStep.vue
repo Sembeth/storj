@@ -55,7 +55,7 @@
                     <VButton
                         class="generate-grant__gateway-area__container__warning__button"
                         label="Generate Gateway Credentials"
-                        width="100%"
+                        width="calc(100% - 4px)"
                         height="48px"
                         :is-blue-white="true"
                         :on-press="onGenerateCredentialsClick"
@@ -101,6 +101,7 @@
         </div>
         <VButton
             class="generate-grant__done-button"
+            :class="{ 'extra-margin-top': !(isOnboardingTour || areGatewayCredentialsVisible) }"
             label="Done"
             width="100%"
             height="48px"
@@ -122,6 +123,7 @@ import HideIcon from '@/../static/images/common/BlackArrowHide.svg';
 import { RouteConfig } from '@/router';
 import { ACCESS_GRANTS_ACTIONS } from '@/store/modules/accessGrants';
 import { GatewayCredentials } from '@/types/accessGrants';
+import { SegmentEvent } from '@/utils/constants/analyticsEventNames';
 import { MetaUtils } from '@/utils/meta';
 
 @Component({
@@ -248,18 +250,7 @@ export default class ResultStep extends Vue {
      * Proceed to upload data step.
      */
     public onDoneClick(): void {
-        if (this.isOnboardingTour) {
-            this.$router.push(RouteConfig.ProjectDashboard.path);
-
-            return;
-        }
-
-        this.$router.push({
-            name: RouteConfig.AccessGrants.with(RouteConfig.CreateAccessGrant.with(RouteConfig.UploadStep)).name,
-            params: {
-                isUplinkSectionEnabled: 'false',
-            },
-        });
+        this.isOnboardingTour ? this.$router.push(RouteConfig.ProjectDashboard.path) : this.$router.push(RouteConfig.AccessGrants.path);
     }
 
     /**
@@ -274,6 +265,14 @@ export default class ResultStep extends Vue {
 
             await this.$notify.success('Gateway credentials were generated successfully');
             this.areKeysVisible = true;
+
+            const satelliteName: string = MetaUtils.getMetaContent('satellite-name');
+
+            this.$segment.track(SegmentEvent.GENERATE_GATEWAY_CREDENTIALS_CLICKED, {
+                satelliteName: satelliteName,
+                email: this.$store.getters.user.email,
+            });
+
             this.isLoading = false;
         } catch (error) {
             await this.$notify.error(error.message);
@@ -520,5 +519,9 @@ export default class ResultStep extends Vue {
 
     .border-radius {
         border-radius: 6px;
+    }
+
+    .extra-margin-top {
+        margin-top: 76px;
     }
 </style>

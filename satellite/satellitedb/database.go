@@ -31,7 +31,6 @@ import (
 	"storj.io/storj/satellite/repair/irreparable"
 	"storj.io/storj/satellite/repair/queue"
 	"storj.io/storj/satellite/revocation"
-	"storj.io/storj/satellite/rewards"
 	"storj.io/storj/satellite/satellitedb/dbx"
 	"storj.io/storj/satellite/snopayouts"
 )
@@ -68,10 +67,6 @@ type Options struct {
 	ApplicationName      string
 	APIKeysLRUOptions    cache.Options
 	RevocationLRUOptions cache.Options
-
-	// How many records to read in a single transaction when asked for all of the
-	// billable bandwidth from the reported serials table.
-	ReportedRollupsReadBatchSize int
 
 	// How many storage node rollups to save/read in one batch.
 	SaveRollupBatchSize int
@@ -181,6 +176,7 @@ func (db *satelliteDB) TestDBAccess() *dbx.DB { return db.DB }
 // the default database.
 func (dbc *satelliteDBCollection) MigrationTestingDefaultDB() interface {
 	TestDBAccess() *dbx.DB
+	TestPostgresMigration() *migrate.Migration
 	PostgresMigration() *migrate.Migration
 } {
 	return dbc.getByName("")
@@ -251,15 +247,10 @@ func (dbc *satelliteDBCollection) Console() console.DB {
 	return db.consoleDB
 }
 
-// Rewards returns database for storing offers.
-func (dbc *satelliteDBCollection) Rewards() rewards.DB {
-	return &offersDB{db: dbc.getByName("rewards")}
-}
-
 // Orders returns database for storing orders.
 func (dbc *satelliteDBCollection) Orders() orders.DB {
 	db := dbc.getByName("orders")
-	return &ordersDB{db: db, reportedRollupsReadBatchSize: db.opts.ReportedRollupsReadBatchSize}
+	return &ordersDB{db: db}
 }
 
 // Containment returns database for storing pending audit info.

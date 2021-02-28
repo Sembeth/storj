@@ -53,8 +53,9 @@ func (db *payoutDB) StorePayStub(ctx context.Context, paystub payouts.PayStub) (
 			held,
 			owed,
 			disposed,
-			paid
-		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+			paid,
+			distributed
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 
 	_, err = db.ExecContext(ctx, query,
 		paystub.Period,
@@ -78,6 +79,7 @@ func (db *payoutDB) StorePayStub(ctx context.Context, paystub payouts.PayStub) (
 		paystub.Owed,
 		paystub.Disposed,
 		paystub.Paid,
+		paystub.Distributed,
 	)
 
 	return ErrPayout.Wrap(err)
@@ -111,7 +113,8 @@ func (db *payoutDB) GetPayStub(ctx context.Context, satelliteID storj.NodeID, pe
 			held,
 			owed,
 			disposed,
-			paid
+			paid,
+			distributed
 		FROM paystubs WHERE satellite_id = ? AND period = ?`,
 		satelliteID, period,
 	)
@@ -136,6 +139,7 @@ func (db *payoutDB) GetPayStub(ctx context.Context, satelliteID storj.NodeID, pe
 		&result.Owed,
 		&result.Disposed,
 		&result.Paid,
+		&result.Distributed,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -151,28 +155,29 @@ func (db *payoutDB) GetPayStub(ctx context.Context, satelliteID storj.NodeID, pe
 func (db *payoutDB) AllPayStubs(ctx context.Context, period string) (_ []payouts.PayStub, err error) {
 	defer mon.Task()(&ctx)(&err)
 
-	query := `SELECT 
-			  	satellite_id,
-			  	created_at,
-			  	codes,
-			  	usage_at_rest,
-			  	usage_get,
-			  	usage_put,
-			  	usage_get_repair,
-			  	usage_put_repair,
-			  	usage_get_audit,
-			  	comp_at_rest,
-			  	comp_get,
-			  	comp_put,
-			  	comp_get_repair,
-			  	comp_put_repair,
-			  	comp_get_audit,
-			  	surge_percent,
-			  	held,
-			  	owed,
-			  	disposed,
-			  	paid
-			  FROM paystubs WHERE period = ?`
+	query := `SELECT
+			satellite_id,
+			created_at,
+			codes,
+			usage_at_rest,
+			usage_get,
+			usage_put,
+			usage_get_repair,
+			usage_put_repair,
+			usage_get_audit,
+			comp_at_rest,
+			comp_get,
+			comp_put,
+			comp_get_repair,
+			comp_put_repair,
+			comp_get_audit,
+			surge_percent,
+			held,
+			owed,
+			disposed,
+			paid,
+			distributed
+		FROM paystubs WHERE period = ?`
 
 	rows, err := db.QueryContext(ctx, query, period)
 	if err != nil {
@@ -206,6 +211,7 @@ func (db *payoutDB) AllPayStubs(ctx context.Context, period string) (_ []payouts
 			&paystub.Owed,
 			&paystub.Disposed,
 			&paystub.Paid,
+			&paystub.Distributed,
 		)
 		if err != nil {
 			return nil, ErrPayout.Wrap(err)
@@ -224,10 +230,10 @@ func (db *payoutDB) AllPayStubs(ctx context.Context, period string) (_ []payouts
 func (db *payoutDB) SatellitesHeldbackHistory(ctx context.Context, id storj.NodeID) (_ []payouts.HoldForPeriod, err error) {
 	defer mon.Task()(&ctx)(&err)
 
-	query := `SELECT 
-				period,
-				held
-			  FROM paystubs WHERE satellite_id = ? ORDER BY period ASC`
+	query := `SELECT
+			period,
+			held
+		FROM paystubs WHERE satellite_id = ? ORDER BY period ASC`
 
 	rows, err := db.QueryContext(ctx, query, id)
 	if err != nil {
@@ -345,9 +351,9 @@ func (db *payoutDB) StorePayment(ctx context.Context, payment payouts.Payment) (
 func (db *payoutDB) SatellitesDisposedHistory(ctx context.Context, satelliteID storj.NodeID) (_ int64, err error) {
 	defer mon.Task()(&ctx)(&err)
 
-	query := `SELECT 
-				disposed
-			  FROM paystubs WHERE satellite_id = ? ORDER BY period ASC`
+	query := `SELECT
+			disposed
+		FROM paystubs WHERE satellite_id = ? ORDER BY period ASC`
 
 	rows, err := db.QueryContext(ctx, query, satelliteID)
 	if err != nil {
@@ -423,4 +429,52 @@ func (db *payoutDB) GetTotalEarned(ctx context.Context) (_ int64, err error) {
 	}
 
 	return totalEarned, nil
+}
+
+// GetEarnedAtSatellite returns total earned value for node from specific satellite.
+func (db *payoutDB) GetEarnedAtSatellite(ctx context.Context, id storj.NodeID) (_ int64, err error) {
+	defer mon.Task()(&ctx)(&err)
+	query := `SELECT comp_at_rest, comp_get, comp_get_repair, comp_get_audit FROM paystubs WHERE satellite_id = ?`
+	rows, err := db.QueryContext(ctx, query, id)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { err = errs.Combine(err, rows.Close()) }()
+	var totalEarned int64
+	for rows.Next() {
+		var compAtRest, compGet, compGetRepair, compGetAudit int64
+		err := rows.Scan(&compAtRest, &compGet, &compGetRepair, &compGetAudit)
+		if err != nil {
+			return 0, ErrPayout.Wrap(err)
+		}
+		totalEarned += compGetAudit + compGet + compGetRepair + compAtRest
+	}
+	if err = rows.Err(); err != nil {
+		return 0, ErrPayout.Wrap(err)
+	}
+	return totalEarned, nil
+}
+
+// GetPayingSatellitesIDs returns list of satellite ID's that ever paid to storagenode.
+func (db *payoutDB) GetPayingSatellitesIDs(ctx context.Context) (_ []storj.NodeID, err error) {
+	defer mon.Task()(&ctx)(&err)
+	query := `SELECT DISTINCT (satellite_id) FROM paystubs`
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errs.Combine(err, rows.Close()) }()
+	var satelliteIDs []storj.NodeID
+	for rows.Next() {
+		var satelliteID storj.NodeID
+		err := rows.Scan(&satelliteID)
+		if err != nil {
+			return nil, ErrPayout.Wrap(err)
+		}
+		satelliteIDs = append(satelliteIDs, satelliteID)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, ErrPayout.Wrap(err)
+	}
+	return satelliteIDs, nil
 }

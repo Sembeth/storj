@@ -35,6 +35,9 @@ func TestHeldAmountApi(t *testing.T) {
 			reputationDB := sno.DB.Reputation()
 			baseURL := fmt.Sprintf("http://%s/api/heldamount", console.Listener.Addr())
 
+			// pause nodestats reputation cache because later tests assert a specific joinedat.
+			sno.NodeStats.Cache.Reputation.Pause()
+
 			period := "2020-03"
 			paystub := payouts.PayStub{
 				SatelliteID:    satellite.ID(),
@@ -72,7 +75,7 @@ func TestHeldAmountApi(t *testing.T) {
 
 				paystub.UsageAtRest /= 720
 
-				expected, err := json.Marshal([]payouts.PayStub{paystub})
+				expected, err := json.Marshal(paystub)
 				require.NoError(t, err)
 
 				defer func() {
@@ -89,7 +92,7 @@ func TestHeldAmountApi(t *testing.T) {
 				res2, err := http.Get(url)
 				require.NoError(t, err)
 				require.NotNil(t, res2)
-				require.Equal(t, http.StatusNotFound, res2.StatusCode)
+				require.Equal(t, http.StatusOK, res2.StatusCode)
 
 				defer func() {
 					err = res2.Body.Close()
@@ -98,7 +101,7 @@ func TestHeldAmountApi(t *testing.T) {
 				body2, err := ioutil.ReadAll(res2.Body)
 				require.NoError(t, err)
 
-				expected = []byte("{\"error\":\"payouts console web error: payouts service error: no payStub for period error: sql: no rows in result set\"}\n")
+				expected = []byte("null\n")
 				require.Equal(t, expected, body2)
 
 				// should return 400 cause of wrong satellite id.

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spacemonkeygo/monkit/v3"
@@ -116,6 +117,62 @@ func (cache *overlaycache) selectAllStorageNodesUpload(ctx context.Context, sele
 	}
 
 	return reputableNodes, newNodes, Error.Wrap(rows.Err())
+}
+
+// SelectAllStorageNodesDownload returns all nodes that qualify to store data, organized as reputable nodes and new nodes.
+func (cache *overlaycache) SelectAllStorageNodesDownload(ctx context.Context, onlineWindow time.Duration, asOf overlay.AsOfSystemTimeConfig) (nodes []*overlay.SelectedNode, err error) {
+	for {
+		nodes, err = cache.selectAllStorageNodesDownload(ctx, onlineWindow, asOf)
+		if err != nil {
+			if cockroachutil.NeedsRetry(err) {
+				continue
+			}
+			return nodes, err
+		}
+		break
+	}
+
+	return nodes, err
+}
+
+func (cache *overlaycache) selectAllStorageNodesDownload(ctx context.Context, onlineWindow time.Duration, asOfConfig overlay.AsOfSystemTimeConfig) (_ []*overlay.SelectedNode, err error) {
+	defer mon.Task()(&ctx)(&err)
+
+	asOf := cache.db.AsOfSystemTimeClause(asOfConfig.DefaultInterval)
+
+	query := `
+		SELECT id, address, last_net, last_ip_port
+			FROM nodes ` + asOf + `
+			WHERE disqualified IS NULL
+			AND exit_finished_at IS NULL
+			AND last_contact_success > $1
+	`
+	args := []interface{}{
+		// $1
+		time.Now().Add(-onlineWindow),
+	}
+
+	rows, err := cache.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errs.Combine(err, rows.Close()) }()
+
+	var nodes []*overlay.SelectedNode
+	for rows.Next() {
+		var node overlay.SelectedNode
+		node.Address = &pb.NodeAddress{}
+		var lastIPPort sql.NullString
+		err = rows.Scan(&node.ID, &node.Address.Address, &node.LastNet, &lastIPPort)
+		if err != nil {
+			return nil, err
+		}
+		if lastIPPort.Valid {
+			node.LastIPPort = lastIPPort.String
+		}
+		nodes = append(nodes, &node)
+	}
+	return nodes, Error.Wrap(rows.Err())
 }
 
 // GetNodesNetwork returns the /24 subnet for each storage node, order is not guaranteed.
@@ -598,8 +655,14 @@ func (cache *overlaycache) UpdateNodeInfo(ctx context.Context, nodeID storj.Node
 			updateFields.Type = dbx.Node_Type(int(nodeInfo.Type))
 		}
 		if nodeInfo.Operator != nil {
+			walletFeatures, err := encodeWalletFeatures(nodeInfo.Operator.GetWalletFeatures())
+			if err != nil {
+				return nil, Error.Wrap(err)
+			}
+
 			updateFields.Wallet = dbx.Node_Wallet(nodeInfo.Operator.GetWallet())
 			updateFields.Email = dbx.Node_Email(nodeInfo.Operator.GetEmail())
+			updateFields.WalletFeatures = dbx.Node_WalletFeatures(walletFeatures)
 		}
 		if nodeInfo.Capacity != nil {
 			updateFields.FreeDisk = dbx.Node_FreeDisk(nodeInfo.Capacity.GetFreeDisk())
@@ -979,8 +1042,9 @@ func convertDBNode(ctx context.Context, info *dbx.Node) (_ *overlay.NodeDossier,
 		},
 		Type: pb.NodeType(info.Type),
 		Operator: pb.NodeOperator{
-			Email:  info.Email,
-			Wallet: info.Wallet,
+			Email:          info.Email,
+			Wallet:         info.Wallet,
+			WalletFeatures: decodeWalletFeatures(info.WalletFeatures),
 		},
 		Capacity: pb.NodeCapacity{
 			FreeDisk: info.FreeDisk,
@@ -1007,6 +1071,31 @@ func convertDBNode(ctx context.Context, info *dbx.Node) (_ *overlay.NodeDossier,
 	}
 
 	return node, nil
+}
+
+// encodeWalletFeatures encodes wallet features into comma separated list string.
+func encodeWalletFeatures(features []string) (string, error) {
+	var errGroup errs.Group
+
+	for _, feature := range features {
+		if strings.Contains(feature, ",") {
+			errGroup.Add(errs.New("error encoding %s, can not contain separator \",\"", feature))
+		}
+	}
+	if err := errGroup.Err(); err != nil {
+		return "", Error.Wrap(err)
+	}
+
+	return strings.Join(features, ","), nil
+}
+
+// decodeWalletFeatures decodes comma separated wallet features list string.
+func decodeWalletFeatures(encoded string) []string {
+	if encoded == "" {
+		return nil
+	}
+
+	return strings.Split(encoded, ",")
 }
 
 func getNodeStats(dbNode *dbx.Node) *overlay.NodeStats {
@@ -1464,10 +1553,14 @@ func (cache *overlaycache) populateUpdateFields(dbNode *dbx.Node, updateReq *ove
 	return updateFields
 }
 
-// DQNodesLastSeenBefore disqualifies all nodes where last_contact_success < cutoff.
+// DQNodesLastSeenBefore disqualifies all nodes where last_contact_success < cutoff except those already disqualified
+// or gracefully exited.
 func (cache *overlaycache) DQNodesLastSeenBefore(ctx context.Context, cutoff time.Time) (err error) {
 	defer mon.Task()(&ctx)(&err)
-	q := `UPDATE nodes SET disqualified = current_timestamp WHERE last_contact_success < $1;`
+	q := `UPDATE nodes SET disqualified = current_timestamp
+			WHERE last_contact_success < $1
+			AND disqualified is NULL
+			AND exit_finished_at is NULL;`
 	_, err = cache.db.ExecContext(ctx, q, cutoff)
 	return err
 }
@@ -1485,23 +1578,27 @@ func (cache *overlaycache) UpdateCheckIn(ctx context.Context, node overlay.NodeC
 		return Error.New("unable to convert version to semVer")
 	}
 
+	walletFeatures, err := encodeWalletFeatures(node.Operator.GetWalletFeatures())
+	if err != nil {
+		return Error.Wrap(err)
+	}
+
 	query := `
 			INSERT INTO nodes
 			(
 				id, address, last_net, protocol, type,
 				email, wallet, free_disk,
-				uptime_success_count, total_uptime_count,
 				last_contact_success,
 				last_contact_failure,
 				audit_reputation_alpha, audit_reputation_beta,
 				unknown_audit_reputation_alpha, unknown_audit_reputation_beta,
 				major, minor, patch, hash, timestamp, release,
-				last_ip_port
+				last_ip_port,
+				wallet_features
 			)
 			VALUES (
 				$1, $2, $3, $4, $5,
 				$6, $7, $8,
-				$9::bool::int, 1,
 				CASE WHEN $9::bool IS TRUE THEN $18::timestamptz
 					ELSE '0001-01-01 00:00:00+00'::timestamptz
 				END,
@@ -1511,7 +1608,8 @@ func (cache *overlaycache) UpdateCheckIn(ctx context.Context, node overlay.NodeC
 				$10, $11,
 				$10, $11,
 				$12, $13, $14, $15, $16, $17,
-				$19
+				$19,
+				$20
 			)
 			ON CONFLICT (id)
 			DO UPDATE
@@ -1531,7 +1629,8 @@ func (cache *overlaycache) UpdateCheckIn(ctx context.Context, node overlay.NodeC
 					THEN $18::timestamptz
 					ELSE nodes.last_contact_failure
 				END,
-				last_ip_port=$19;
+				last_ip_port=$19,
+				wallet_features=$20;
 			`
 	_, err = cache.db.ExecContext(ctx, query,
 		// args $1 - $5
@@ -1548,6 +1647,8 @@ func (cache *overlaycache) UpdateCheckIn(ctx context.Context, node overlay.NodeC
 		timestamp,
 		// args $19
 		node.LastIPPort,
+		// args $20,
+		walletFeatures,
 	)
 	if err != nil {
 		return Error.Wrap(err)
@@ -1581,4 +1682,40 @@ func (cache *overlaycache) TestUnvetNode(ctx context.Context, nodeID storj.NodeI
 	}
 	_, err = cache.Get(ctx, nodeID)
 	return err
+}
+
+// IterateAllNodes will call cb on all known nodes (used in restore trash contexts).
+func (cache *overlaycache) IterateAllNodes(ctx context.Context, cb func(context.Context, *overlay.SelectedNode) error) (err error) {
+	defer mon.Task()(&ctx)(&err)
+
+	var rows tagsql.Rows
+	rows, err = cache.db.Query(ctx, cache.db.Rebind(`
+		SELECT last_net, id, address, last_ip_port
+		FROM nodes
+	`))
+	if err != nil {
+		return Error.Wrap(err)
+	}
+	defer func() { err = errs.Combine(err, rows.Close()) }()
+
+	for rows.Next() {
+		var node overlay.SelectedNode
+		node.Address = &pb.NodeAddress{Transport: pb.NodeTransport_TCP_TLS_GRPC}
+
+		var lastIPPort sql.NullString
+		err = rows.Scan(&node.LastNet, &node.ID, &node.Address.Address, &lastIPPort)
+		if err != nil {
+			return Error.Wrap(err)
+		}
+		if lastIPPort.Valid {
+			node.LastIPPort = lastIPPort.String
+		}
+
+		err = cb(ctx, &node)
+		if err != nil {
+			return err
+		}
+	}
+
+	return rows.Err()
 }

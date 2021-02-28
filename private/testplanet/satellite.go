@@ -34,8 +34,8 @@ import (
 	"storj.io/storj/satellite/accounting"
 	"storj.io/storj/satellite/accounting/live"
 	"storj.io/storj/satellite/accounting/projectbwcleanup"
-	"storj.io/storj/satellite/accounting/reportedrollup"
 	"storj.io/storj/satellite/accounting/rollup"
+	"storj.io/storj/satellite/accounting/rolluparchive"
 	"storj.io/storj/satellite/accounting/tally"
 	"storj.io/storj/satellite/admin"
 	"storj.io/storj/satellite/audit"
@@ -47,7 +47,6 @@ import (
 	"storj.io/storj/satellite/gracefulexit"
 	"storj.io/storj/satellite/inspector"
 	"storj.io/storj/satellite/mailservice"
-	"storj.io/storj/satellite/marketingweb"
 	"storj.io/storj/satellite/metainfo"
 	"storj.io/storj/satellite/metainfo/expireddeletion"
 	"storj.io/storj/satellite/metainfo/objectdeletion"
@@ -144,8 +143,8 @@ type Satellite struct {
 		Tally            *tally.Service
 		Rollup           *rollup.Service
 		ProjectUsage     *accounting.Service
-		ReportedRollup   *reportedrollup.Chore
 		ProjectBWCleanup *projectbwcleanup.Chore
+		RollupArchive    *rolluparchive.Chore
 	}
 
 	LiveAccounting struct {
@@ -164,11 +163,6 @@ type Satellite struct {
 		Listener net.Listener
 		Service  *console.Service
 		Endpoint *consoleweb.Server
-	}
-
-	Marketing struct {
-		Listener net.Listener
-		Endpoint *marketingweb.Server
 	}
 
 	NodeStats struct {
@@ -211,7 +205,7 @@ func (system *Satellite) AddUser(ctx context.Context, newUser console.CreateUser
 	}
 
 	newUser.Password = newUser.FullName
-	user, err := system.API.Console.Service.CreateUser(ctx, newUser, regToken.Secret, "")
+	user, err := system.API.Console.Service.CreateUser(ctx, newUser, regToken.Secret)
 	if err != nil {
 		return nil, err
 	}
@@ -495,13 +489,11 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 			},
 		},
 		Orders: orders.Config{
-			Expiration:                 7 * 24 * time.Hour,
-			SettlementBatchSize:        10,
-			FlushBatchSize:             10,
-			FlushInterval:              defaultInterval,
-			NodeStatusLogging:          true,
-			WindowEndpointRolloutPhase: orders.WindowEndpointRolloutPhase3,
-			EncryptionKeys:             *encryptionKeys,
+			Expiration:        7 * 24 * time.Hour,
+			FlushBatchSize:    10,
+			FlushInterval:     defaultInterval,
+			NodeStatusLogging: true,
+			EncryptionKeys:    *encryptionKeys,
 		},
 		Checker: checker.Config{
 			Interval:                  defaultInterval,
@@ -561,8 +553,11 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 			Interval:      defaultInterval,
 			DeleteTallies: false,
 		},
-		ReportedRollup: reportedrollup.Config{
-			Interval: defaultInterval,
+		RollupArchive: rolluparchive.Config{
+			Interval:   defaultInterval,
+			ArchiveAge: time.Hour * 24,
+			BatchSize:  1000,
+			Enabled:    true,
 		},
 		ProjectBWCleanup: projectbwcleanup.Config{
 			Interval:     defaultInterval,
@@ -593,10 +588,6 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 				NumLimits: 10,
 			},
 		},
-		Marketing: marketingweb.Config{
-			Address:   "127.0.0.1:0",
-			StaticDir: filepath.Join(developmentRoot, "web/marketing"),
-		},
 		Version: planet.NewVersionConfig(),
 		GracefulExit: gracefulexit.Config{
 			Enabled: true,
@@ -617,12 +608,6 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 		},
 	}
 
-	if planet.ReferralManager != nil {
-		config.Referrals.ReferralManagerURL = storj.NodeURL{
-			ID:      planet.ReferralManager.Identity().ID,
-			Address: planet.ReferralManager.Addr().String(),
-		}
-	}
 	if planet.config.Reconfigure.Satellite != nil {
 		planet.config.Reconfigure.Satellite(log, index, &config)
 	}
@@ -736,15 +721,12 @@ func createNewSystem(name string, log *zap.Logger, config satellite.Config, peer
 	system.Accounting.Tally = peer.Accounting.Tally
 	system.Accounting.Rollup = peer.Accounting.Rollup
 	system.Accounting.ProjectUsage = api.Accounting.ProjectUsage
-	system.Accounting.ReportedRollup = peer.Accounting.ReportedRollupChore
 	system.Accounting.ProjectBWCleanup = peer.Accounting.ProjectBWCleanupChore
+	system.Accounting.RollupArchive = peer.Accounting.RollupArchiveChore
 
 	system.LiveAccounting = peer.LiveAccounting
 
 	system.ProjectLimits.Cache = api.ProjectLimits.Cache
-
-	system.Marketing.Listener = api.Marketing.Listener
-	system.Marketing.Endpoint = api.Marketing.Endpoint
 
 	system.GracefulExit.Chore = peer.GracefulExit.Chore
 	system.GracefulExit.Endpoint = api.GracefulExit.Endpoint
