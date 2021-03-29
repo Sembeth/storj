@@ -117,7 +117,7 @@ install_sim(){
         rm -rf .build/gateway-tmp
         mkdir -p .build/gateway-tmp
         pushd .build/gateway-tmp
-            go mod init gatewaybuild && GOBIN=${bin_dir} GO111MODULE=on go get storj.io/gateway@latest
+            go mod init gatewaybuild && GOBIN=${bin_dir} GO111MODULE=on go get storj.io/gateway@multipart-upload
         popd
     fi
 }
@@ -141,6 +141,10 @@ setup_stage(){
     if [[ $stage == "2" ]]
     then
         mv $dest_sat_cfg_dir/satellite $dest_sat_cfg_dir/old_satellite
+
+        go build -v -o $test_dir/bin storj.io/storj/cmd/metainfo-migration >/dev/null 2>&1
+        STORJ_MIGRATION_DB=${STORJ_MIGRATION_DB:-$STORJ_SIM_POSTGRES}
+        $test_dir/bin/metainfo-migration --pointerdb "${STORJ_MIGRATION_DB}" --metabasedb "${STORJ_MIGRATION_DB}"
     fi
 
     # ln binary and copy config.yaml for desired version
