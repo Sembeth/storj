@@ -18,8 +18,8 @@ import (
 
 	"storj.io/common/errs2"
 	"storj.io/common/memory"
+	"storj.io/storj/satellite/metabase/metaloop"
 	"storj.io/storj/satellite/metainfo"
-	"storj.io/storj/satellite/metainfo/metaloop"
 )
 
 var mon = monkit.Package()
@@ -173,5 +173,10 @@ func (progress *ProgressObserver) RemoteSegment(context.Context, *metaloop.Segme
 // InlineSegment implements the Observer interface.
 func (progress *ProgressObserver) InlineSegment(context.Context, *metaloop.Segment) error {
 	progress.InlineSegmentCount++
+	return nil
+}
+
+// LoopStarted is called at each start of a loop.
+func (progress *ProgressObserver) LoopStarted(ctx context.Context, info metaloop.LoopInfo) (err error) {
 	return nil
 }

@@ -12,19 +12,19 @@ import (
 	"go.uber.org/zap"
 
 	"storj.io/common/sync2"
+	"storj.io/storj/satellite/metabase"
 	"storj.io/storj/satellite/metainfo"
-	"storj.io/storj/satellite/metainfo/metabase"
 )
 
 var (
 	// Error defines the expireddeletion chore errors class.
-	Error = errs.Class("expireddeletion chore error")
+	Error = errs.Class("expired deletion")
 	mon   = monkit.Package()
 )
 
 // Config contains configurable values for expired segment cleanup.
 type Config struct {
-	Interval  time.Duration `help:"the time between each attempt to go through the db and clean up expired segments" releaseDefault:"120h" devDefault:"10s"`
+	Interval  time.Duration `help:"the time between each attempt to go through the db and clean up expired segments" releaseDefault:"24h" devDefault:"10s"`
 	Enabled   bool          `help:"set if expired segment cleanup is enabled or not" releaseDefault:"true" devDefault:"true"`
 	ListLimit int           `help:"how many expired objects to query in a batch" default:"100"`
 }

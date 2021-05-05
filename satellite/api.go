@@ -25,10 +25,10 @@ import (
 	"storj.io/common/storj"
 	"storj.io/private/debug"
 	"storj.io/private/version"
-	"storj.io/storj/pkg/server"
 	"storj.io/storj/private/lifecycle"
 	"storj.io/storj/private/post"
 	"storj.io/storj/private/post/oauth2"
+	"storj.io/storj/private/server"
 	"storj.io/storj/private/version/checker"
 	"storj.io/storj/satellite/accounting"
 	"storj.io/storj/satellite/analytics"
@@ -47,6 +47,7 @@ import (
 	"storj.io/storj/satellite/orders"
 	"storj.io/storj/satellite/overlay"
 	"storj.io/storj/satellite/payments"
+	"storj.io/storj/satellite/payments/paymentsconfig"
 	"storj.io/storj/satellite/payments/stripecoinpayments"
 	"storj.io/storj/satellite/repair/irreparable"
 	"storj.io/storj/satellite/rewards"
@@ -96,7 +97,6 @@ type API struct {
 	}
 
 	Metainfo struct {
-		Database      metainfo.PointerDB
 		Metabase      metainfo.MetabaseDB
 		Service       *metainfo.Service
 		PieceDeletion *piecedeletion.Service
@@ -165,7 +165,7 @@ type API struct {
 
 // NewAPI creates a new satellite API process.
 func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
-	pointerDB metainfo.PointerDB, metabaseDB metainfo.MetabaseDB, revocationDB extensions.RevocationDB,
+	metabaseDB metainfo.MetabaseDB, revocationDB extensions.RevocationDB,
 	liveAccounting accounting.Cache, rollupsWriteCache *orders.RollupsWriteCache,
 	config *Config, versionInfo version.Info, atomicLogLevel *zap.AtomicLevel) (*API, error) {
 	peer := &API{
@@ -354,19 +354,21 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 		peer.Marketing.PartnersService = rewards.NewPartnersService(
 			peer.Log.Named("partners"),
 			rewards.DefaultPartnersDB,
-			[]string{
-				"https://us-central-1.tardigrade.io/",
-				"https://asia-east-1.tardigrade.io/",
-				"https://europe-west-1.tardigrade.io/",
-			},
 		)
 	}
 
+	{ // setup analytics service
+		peer.Analytics.Service = analytics.NewService(peer.Log.Named("analytics:service"), config.Analytics, config.Console.SatelliteName)
+
+		peer.Services.Add(lifecycle.Item{
+			Name:  "analytics:service",
+			Close: peer.Analytics.Service.Close,
+		})
+	}
+
 	{ // setup metainfo
-		peer.Metainfo.Database = pointerDB
 		peer.Metainfo.Metabase = metabaseDB
 		peer.Metainfo.Service = metainfo.NewService(peer.Log.Named("metainfo:service"),
-			peer.Metainfo.Database,
 			peer.DB.Buckets(),
 			peer.Metainfo.Metabase,
 		)
@@ -555,15 +557,6 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 		})
 	}
 
-	{ // setup analytics service
-		peer.Analytics.Service = analytics.NewService(peer.Log.Named("analytics:service"), config.Analytics, config.Console.SatelliteName)
-
-		peer.Services.Add(lifecycle.Item{
-			Name:  "analytics:service",
-			Close: peer.Analytics.Service.Close,
-		})
-	}
-
 	{ // setup console
 		consoleConfig := config.Console
 		peer.Console.Listener, err = net.Listen("tcp", consoleConfig.Address)
@@ -583,11 +576,18 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 			peer.DB.Buckets(),
 			peer.Marketing.PartnersService,
 			peer.Payments.Accounts,
+			peer.Analytics.Service,
 			consoleConfig.Config,
 			config.Payments.MinCoinPayment,
 		)
 		if err != nil {
 			return nil, errs.Combine(err, peer.Close())
+		}
+
+		pricing := paymentsconfig.PricingValues{
+			StorageTBPrice: config.Payments.StorageTBPrice,
+			EgressTBPrice:  config.Payments.EgressTBPrice,
+			ObjectPrice:    config.Payments.ObjectPrice,
 		}
 
 		peer.Console.Endpoint = consoleweb.NewServer(
@@ -599,6 +599,7 @@ func NewAPI(log *zap.Logger, full *identity.FullIdentity, db DB,
 			peer.Analytics.Service,
 			peer.Console.Listener,
 			config.Payments.StripeCoinPayments.StripePublicKey,
+			pricing,
 			peer.URL(),
 		)
 

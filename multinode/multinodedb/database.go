@@ -11,12 +11,12 @@ import (
 	"github.com/zeebo/errs"
 	"go.uber.org/zap"
 
+	"storj.io/private/dbutil"
+	"storj.io/private/dbutil/pgutil"
 	"storj.io/storj/multinode"
 	"storj.io/storj/multinode/console"
 	"storj.io/storj/multinode/multinodedb/dbx"
 	"storj.io/storj/multinode/nodes"
-	"storj.io/storj/private/dbutil"
-	"storj.io/storj/private/dbutil/pgutil"
 )
 
 var (
@@ -26,7 +26,7 @@ var (
 	mon = monkit.Package()
 
 	// Error is the default multinodedb errs class.
-	Error = errs.Class("multinodedb internal error")
+	Error = errs.Class("multinodedb")
 )
 
 // multinodeDB combines access to different database tables with a record

@@ -117,11 +117,6 @@ test-certificates: ## Test certificate signing service and storagenode setup (je
 	@echo "Running ${@}"
 	@./scripts/test-certificates.sh
 
-.PHONY: test-docker
-test-docker: ## Run tests in Docker
-	docker-compose up -d --remove-orphans test
-	docker-compose run test make test
-
 .PHONY: test-sim-backwards-compatible
 test-sim-backwards-compatible: ## Test uploading a file with lastest release (jenkins)
 	@echo "Running ${@}"
@@ -183,14 +178,14 @@ satellite-image: satellite_linux_arm satellite_linux_arm64 satellite_linux_amd64
 		-f cmd/satellite/Dockerfile .
 
 .PHONY: storagenode-image
-storagenode-image: storagenode_linux_arm storagenode_linux_arm64 storagenode_linux_amd64 ## Build storagenode Docker image
+storagenode-image: ## Build storagenode Docker image
 	${DOCKER_BUILD} --pull=true -t storjlabs/storagenode:${TAG}${CUSTOMTAG}-amd64 \
 		-f cmd/storagenode/Dockerfile .
 	${DOCKER_BUILD} --pull=true -t storjlabs/storagenode:${TAG}${CUSTOMTAG}-arm32v6 \
-		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm32v6 \
+		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm32v6 --build-arg=APK_ARCH=armhf \
 		-f cmd/storagenode/Dockerfile .
 	${DOCKER_BUILD} --pull=true -t storjlabs/storagenode:${TAG}${CUSTOMTAG}-arm64v8 \
-		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm64v8 \
+		--build-arg=GOARCH=arm --build-arg=DOCKER_ARCH=arm64v8 --build-arg=APK_ARCH=aarch64 \
 		-f cmd/storagenode/Dockerfile .
 .PHONY: uplink-image
 uplink-image: uplink_linux_arm uplink_linux_arm64 uplink_linux_amd64 ## Build uplink Docker image
@@ -323,7 +318,7 @@ push-images: ## Push Docker images to Docker Hub (jenkins)
 binaries-upload: ## Upload binaries to Google Storage (jenkins)
 	cd "release/${TAG}"; for f in *; do \
 		zipname=$$(echo $${f} | sed 's/.exe//g') \
-		&& filename=$$(echo $${f} | sed 's/_.*\.exe/.exe/g' | sed 's/_.*//g') \
+		&& filename=$$(echo $${f} | sed 's/_.*\.exe/.exe/g' | sed 's/_.*\.msi/.msi/g' | sed 's/_.*//g') \
 		&& if [ "$${f}" != "$${filename}" ]; then \
 			ln $${f} $${filename} \
 			&& zip -r "$${zipname}.zip" "$${filename}" \
@@ -337,7 +332,7 @@ binaries-upload: ## Upload binaries to Google Storage (jenkins)
 ##@ Clean
 
 .PHONY: clean
-clean: test-docker-clean binaries-clean clean-images ## Clean docker test environment, local release binaries, and local Docker images
+clean: binaries-clean clean-images ## Clean docker test environment, local release binaries, and local Docker images
 
 .PHONY: binaries-clean
 binaries-clean: ## Remove all local release binaries (jenkins)
@@ -349,11 +344,6 @@ clean-images:
 	-docker rmi storjlabs/storagenode:${TAG}${CUSTOMTAG}
 	-docker rmi storjlabs/uplink:${TAG}${CUSTOMTAG}
 	-docker rmi storjlabs/versioncontrol:${TAG}${CUSTOMTAG}
-
-.PHONY: test-docker-clean
-test-docker-clean: ## Clean up Docker environment used in test-docker target
-	-docker-compose down --rmi all
-
 
 ##@ Tooling
 
@@ -379,4 +369,4 @@ bump-dependencies:
 	go mod tidy
 
 update-proto-lock:
-	protolock commit --ignore "satellite/internalpb,storagenode/internalpb,cmd/metainfo-migration/fastpb"
+	protolock commit --ignore "satellite/internalpb,storagenode/internalpb"

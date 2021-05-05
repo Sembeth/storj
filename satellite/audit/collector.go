@@ -8,7 +8,7 @@ import (
 	"math/rand"
 
 	"storj.io/common/storj"
-	"storj.io/storj/satellite/metainfo/metaloop"
+	"storj.io/storj/satellite/metabase/metaloop"
 )
 
 var _ metaloop.Observer = (*Collector)(nil)
@@ -27,6 +27,11 @@ func NewCollector(reservoirSlots int, r *rand.Rand) *Collector {
 		slotCount:  reservoirSlots,
 		rand:       r,
 	}
+}
+
+// LoopStarted is called at each start of a loop.
+func (collector *Collector) LoopStarted(context.Context, metaloop.LoopInfo) (err error) {
+	return nil
 }
 
 // RemoteSegment takes a remote segment found in metainfo and creates a reservoir for it if it doesn't exist already.

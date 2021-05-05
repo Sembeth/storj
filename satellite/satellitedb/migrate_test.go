@@ -23,10 +23,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"storj.io/common/testcontext"
-	"storj.io/storj/private/dbutil/dbschema"
-	"storj.io/storj/private/dbutil/pgtest"
-	"storj.io/storj/private/dbutil/pgutil"
-	"storj.io/storj/private/dbutil/tempdb"
+	"storj.io/private/dbutil/dbschema"
+	"storj.io/private/dbutil/pgtest"
+	"storj.io/private/dbutil/pgutil"
+	"storj.io/private/dbutil/tempdb"
 	"storj.io/storj/private/migrate"
 	"storj.io/storj/satellite/satellitedb"
 	"storj.io/storj/satellite/satellitedb/dbx"
@@ -246,6 +246,7 @@ func migrateTest(t *testing.T, connStr string) {
 func TestMigrateGeneratedPostgres(t *testing.T) {
 	migrateGeneratedTest(t, pgtest.PickPostgres(t), pgtest.PickPostgres(t))
 }
+
 func TestMigrateGeneratedCockroach(t *testing.T) {
 	migrateGeneratedTest(t, pgtest.PickCockroachAlt(t), pgtest.PickCockroachAlt(t))
 }

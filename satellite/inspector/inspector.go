@@ -15,15 +15,15 @@ import (
 	"storj.io/common/storj"
 	"storj.io/common/uuid"
 	"storj.io/storj/satellite/internalpb"
+	"storj.io/storj/satellite/metabase"
 	"storj.io/storj/satellite/metainfo"
-	"storj.io/storj/satellite/metainfo/metabase"
 	"storj.io/storj/satellite/overlay"
 )
 
 var (
 	mon = monkit.Package()
 	// Error wraps errors returned from Server struct methods.
-	Error = errs.Class("Endpoint error")
+	Error = errs.Class("inspector")
 )
 
 // Endpoint for checking object and segment health.

@@ -17,9 +17,9 @@ import (
 	"storj.io/common/storj"
 	"storj.io/common/sync2"
 	"storj.io/storj/satellite/internalpb"
+	"storj.io/storj/satellite/metabase"
+	"storj.io/storj/satellite/metabase/metaloop"
 	"storj.io/storj/satellite/metainfo"
-	"storj.io/storj/satellite/metainfo/metabase"
-	"storj.io/storj/satellite/metainfo/metaloop"
 	"storj.io/storj/satellite/overlay"
 	"storj.io/storj/satellite/repair"
 	"storj.io/storj/satellite/repair/irreparable"
@@ -28,7 +28,7 @@ import (
 
 // Error is a standard error class for this package.
 var (
-	Error = errs.Class("checker error")
+	Error = errs.Class("repair checker")
 	mon   = monkit.Package()
 )
 
@@ -293,6 +293,11 @@ func (obs *checkerObserver) loadRedundancy(redundancy storj.RedundancyScheme) (i
 		repair = int(overrideValue)
 	}
 	return int(redundancy.RequiredShares), repair, int(redundancy.OptimalShares), int(redundancy.TotalShares)
+}
+
+// LoopStarted is called at each start of a loop.
+func (obs *checkerObserver) LoopStarted(context.Context, metaloop.LoopInfo) (err error) {
+	return nil
 }
 
 func (obs *checkerObserver) RemoteSegment(ctx context.Context, segment *metaloop.Segment) (err error) {

@@ -19,6 +19,7 @@ import (
 	"storj.io/storj/satellite"
 	"storj.io/storj/satellite/accounting"
 	"storj.io/storj/satellite/accounting/live"
+	"storj.io/storj/satellite/analytics"
 	"storj.io/storj/satellite/console"
 	"storj.io/storj/satellite/console/consoleauth"
 	"storj.io/storj/satellite/console/consoleweb/consoleql"
@@ -36,12 +37,9 @@ func TestGraphqlQuery(t *testing.T) {
 		partnersService := rewards.NewPartnersService(
 			log.Named("partners"),
 			rewards.DefaultPartnersDB,
-			[]string{
-				"https://us-central-1.tardigrade.io/",
-				"https://asia-east-1.tardigrade.io/",
-				"https://europe-west-1.tardigrade.io/",
-			},
 		)
+
+		analyticsService := analytics.NewService(log, analytics.Config{}, "test-satellite")
 
 		redis, err := testredis.Mini(ctx)
 		require.NoError(t, err)
@@ -92,6 +90,7 @@ func TestGraphqlQuery(t *testing.T) {
 			db.Buckets(),
 			partnersService,
 			paymentsService.Accounts(),
+			analyticsService,
 			console.Config{PasswordCost: console.TestPasswordCost, DefaultProjectLimit: 5},
 			5000,
 		)

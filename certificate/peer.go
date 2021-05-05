@@ -17,15 +17,15 @@ import (
 	"storj.io/common/peertls/tlsopts"
 	"storj.io/storj/certificate/authorization"
 	"storj.io/storj/certificate/certificatepb"
-	"storj.io/storj/pkg/revocation"
-	"storj.io/storj/pkg/server"
+	"storj.io/storj/private/revocation"
+	"storj.io/storj/private/server"
 )
 
 var (
 	mon = monkit.Package()
 
 	// Error is the default error class for the certificates peer.
-	Error = errs.Class("certificates peer error")
+	Error = errs.Class("certificate")
 )
 
 // Config is the global certificates config.

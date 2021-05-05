@@ -15,13 +15,13 @@ import (
 	"storj.io/common/sync2"
 	"storj.io/common/uuid"
 	"storj.io/storj/satellite/accounting"
-	"storj.io/storj/satellite/metainfo/metabase"
-	"storj.io/storj/satellite/metainfo/metaloop"
+	"storj.io/storj/satellite/metabase"
+	"storj.io/storj/satellite/metabase/metaloop"
 )
 
 // Error is a standard error class for this package.
 var (
-	Error = errs.Class("tally error")
+	Error = errs.Class("tally")
 	mon   = monkit.Package()
 )
 
@@ -271,6 +271,11 @@ func (observer *Observer) ensureBucket(ctx context.Context, location metabase.Ob
 	}
 
 	return bucket
+}
+
+// LoopStarted is called at each start of a loop.
+func (observer *Observer) LoopStarted(context.Context, metaloop.LoopInfo) (err error) {
+	return nil
 }
 
 // Object is called for each object once.

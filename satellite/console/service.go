@@ -20,10 +20,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"storj.io/common/macaroon"
-	"storj.io/common/memory"
 	"storj.io/common/storj"
 	"storj.io/common/uuid"
 	"storj.io/storj/satellite/accounting"
+	"storj.io/storj/satellite/analytics"
 	"storj.io/storj/satellite/console/consoleauth"
 	"storj.io/storj/satellite/payments"
 	"storj.io/storj/satellite/rewards"
@@ -59,19 +59,19 @@ const (
 
 var (
 	// Error describes internal console error.
-	Error = errs.Class("service error")
+	Error = errs.Class("console service")
 
 	// ErrNoMembership is error type of not belonging to a specific project.
-	ErrNoMembership = errs.Class("no membership error")
+	ErrNoMembership = errs.Class("no membership")
 
 	// ErrTokenExpiration is error type of token reached expiration time.
-	ErrTokenExpiration = errs.Class("token expiration error")
+	ErrTokenExpiration = errs.Class("token expiration")
 
 	// ErrProjLimit is error type of project limit.
-	ErrProjLimit = errs.Class("project limit error")
+	ErrProjLimit = errs.Class("project limit")
 
 	// ErrUsage is error type of project usage.
-	ErrUsage = errs.Class("project usage error")
+	ErrUsage = errs.Class("project usage")
 
 	// ErrEmailUsed is error type that occurs on repeating auth attempts with email.
 	ErrEmailUsed = errs.Class("email used")
@@ -93,6 +93,7 @@ type Service struct {
 	buckets           Buckets
 	partners          *rewards.PartnersService
 	accounts          payments.Accounts
+	analytics         *analytics.Service
 
 	config Config
 
@@ -113,7 +114,7 @@ type PaymentsService struct {
 }
 
 // NewService returns new instance of Service.
-func NewService(log *zap.Logger, signer Signer, store DB, projectAccounting accounting.ProjectAccounting, projectUsage *accounting.Service, buckets Buckets, partners *rewards.PartnersService, accounts payments.Accounts, config Config, minCoinPayment int64) (*Service, error) {
+func NewService(log *zap.Logger, signer Signer, store DB, projectAccounting accounting.ProjectAccounting, projectUsage *accounting.Service, buckets Buckets, partners *rewards.PartnersService, accounts payments.Accounts, analytics *analytics.Service, config Config, minCoinPayment int64) (*Service, error) {
 	if signer == nil {
 		return nil, errs.New("signer can't be nil")
 	}
@@ -137,6 +138,7 @@ func NewService(log *zap.Logger, signer Signer, store DB, projectAccounting acco
 		buckets:           buckets,
 		partners:          partners,
 		accounts:          accounts,
+		analytics:         analytics,
 		config:            config,
 		minCoinPayment:    minCoinPayment,
 	}, nil
@@ -431,6 +433,7 @@ func (paymentService PaymentsService) TokenDeposit(ctx context.Context, amount i
 	}
 
 	tx, err := paymentService.service.accounts.StorjTokens().Deposit(ctx, auth.User.ID, amount)
+
 	return tx, Error.Wrap(err)
 }
 
@@ -476,17 +479,6 @@ func (paymentService PaymentsService) checkProjectInvoicingStatus(ctx context.Co
 	}
 
 	return paymentService.service.accounts.CheckProjectInvoicingStatus(ctx, projectID)
-}
-
-// PopulatePromotionalCoupons is used to populate promotional coupons through all active users who already have
-// a project, payment method and do not have a promotional coupon yet.
-// And updates project limits to selected size.
-// This functionality is deprecated and will be removed.
-func (paymentService PaymentsService) PopulatePromotionalCoupons(ctx context.Context) (err error) {
-	defer mon.Task()(&ctx)(&err)
-
-	duration := 2
-	return Error.Wrap(paymentService.service.accounts.Coupons().PopulatePromotionalCoupons(ctx, &duration, 5500, memory.TB))
 }
 
 // AddPromotionalCoupon creates new coupon for specified user.
@@ -694,6 +686,8 @@ func (s *Service) ActivateAccount(ctx context.Context, activationToken string) (
 		s.log.Debug(fmt.Sprintf("could not add promotional coupon for user %s", user.ID.String()), zap.Error(Error.Wrap(err)))
 	}
 
+	s.analytics.TrackAccountVerified(user.ID, user.Email)
+
 	return nil
 }
 
@@ -780,6 +774,8 @@ func (s *Service) Token(ctx context.Context, email, password string) (token stri
 	}
 	s.auditLog(ctx, "login", &user.ID, user.Email)
 
+	s.analytics.TrackSignedIn(user.ID, user.Email)
+
 	return token, nil
 }
 
@@ -793,6 +789,17 @@ func (s *Service) GetUser(ctx context.Context, id uuid.UUID) (u *User, err error
 	}
 
 	return user, nil
+}
+
+// GetUserID returns the User ID from the session.
+func (s *Service) GetUserID(ctx context.Context) (id uuid.UUID, err error) {
+	defer mon.Task()(&ctx)(&err)
+
+	auth, err := s.getAuthAndAuditLog(ctx, "get user ID")
+	if err != nil {
+		return uuid.UUID{}, Error.Wrap(err)
+	}
+	return auth.User.ID, nil
 }
 
 // GetUserByEmail returns User by email.
@@ -979,7 +986,7 @@ func (s *Service) CreateProject(ctx context.Context, projectInfo ProjectInfo) (p
 		return nil, Error.Wrap(err)
 	}
 
-	err = s.checkProjectLimit(ctx, auth.User.ID)
+	currentProjectCount, err := s.checkProjectLimit(ctx, auth.User.ID)
 	if err != nil {
 		return nil, ErrProjLimit.Wrap(err)
 	}
@@ -1010,6 +1017,7 @@ func (s *Service) CreateProject(ctx context.Context, projectInfo ProjectInfo) (p
 		}
 	}
 
+	var projectID uuid.UUID
 	err = s.store.WithTx(ctx, func(ctx context.Context, tx DBTx) error {
 		p, err = tx.Projects().Insert(ctx,
 			&Project{
@@ -1030,11 +1038,16 @@ func (s *Service) CreateProject(ctx context.Context, projectInfo ProjectInfo) (p
 			return Error.Wrap(err)
 		}
 
+		projectID = p.ID
+
 		return nil
 	})
+
 	if err != nil {
 		return nil, Error.Wrap(err)
 	}
+
+	s.analytics.TrackProjectCreated(auth.User.ID, projectID, currentProjectCount+1)
 
 	// ToDo: check if this is actually the right place.
 	err = s.accounts.Coupons().AddPromotionalCoupon(ctx, auth.User.ID)
@@ -1264,6 +1277,8 @@ func (s *Service) CreateAPIKey(ctx context.Context, projectID uuid.UUID, name st
 	if err != nil {
 		return nil, nil, Error.Wrap(err)
 	}
+
+	s.analytics.TrackAccessGrantCreated(auth.User.ID)
 
 	return info, key, nil
 }
@@ -1587,12 +1602,12 @@ func (s *Service) checkProjectCanBeDeleted(ctx context.Context, project uuid.UUI
 }
 
 // checkProjectLimit is used to check if user is able to create a new project.
-func (s *Service) checkProjectLimit(ctx context.Context, userID uuid.UUID) (err error) {
+func (s *Service) checkProjectLimit(ctx context.Context, userID uuid.UUID) (currentProjects int, err error) {
 	defer mon.Task()(&ctx)(&err)
 
 	limit, err := s.store.Users().GetProjectLimit(ctx, userID)
 	if err != nil {
-		return Error.Wrap(err)
+		return 0, Error.Wrap(err)
 	}
 	if limit == 0 {
 		limit = s.config.DefaultProjectLimit
@@ -1600,14 +1615,14 @@ func (s *Service) checkProjectLimit(ctx context.Context, userID uuid.UUID) (err 
 
 	projects, err := s.GetUsersProjects(ctx)
 	if err != nil {
-		return Error.Wrap(err)
+		return 0, Error.Wrap(err)
 	}
 
 	if len(projects) >= limit {
-		return ErrProjLimit.New(projLimitErrMsg)
+		return 0, ErrProjLimit.New(projLimitErrMsg)
 	}
 
-	return nil
+	return len(projects), nil
 }
 
 // CreateRegToken creates new registration token. Needed for testing.

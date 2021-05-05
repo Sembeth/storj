@@ -26,8 +26,8 @@ import (
 	"storj.io/common/uuid"
 	"storj.io/private/debug"
 	"storj.io/private/version"
-	"storj.io/storj/pkg/revocation"
-	"storj.io/storj/pkg/server"
+	"storj.io/storj/private/revocation"
+	"storj.io/storj/private/server"
 	"storj.io/storj/private/testredis"
 	versionchecker "storj.io/storj/private/version/checker"
 	"storj.io/storj/private/web"
@@ -48,9 +48,9 @@ import (
 	"storj.io/storj/satellite/gracefulexit"
 	"storj.io/storj/satellite/inspector"
 	"storj.io/storj/satellite/mailservice"
+	"storj.io/storj/satellite/metabase/metaloop"
 	"storj.io/storj/satellite/metainfo"
 	"storj.io/storj/satellite/metainfo/expireddeletion"
-	"storj.io/storj/satellite/metainfo/metaloop"
 	"storj.io/storj/satellite/metainfo/piecedeletion"
 	"storj.io/storj/satellite/metrics"
 	"storj.io/storj/satellite/nodestats"
@@ -98,7 +98,6 @@ type Satellite struct {
 	}
 
 	Metainfo struct {
-		Database  metainfo.PointerDB
 		Metabase  metainfo.MetabaseDB
 		Service   *metainfo.Service
 		Endpoint2 *metainfo.Endpoint
@@ -356,21 +355,6 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 	}
 	planet.databases = append(planet.databases, db)
 
-	pointerDB, err := satellitedbtest.CreatePointerDB(ctx, log.Named("pointerdb"), planet.config.Name, "P", index, databases.PointerDB)
-	if err != nil {
-		return nil, err
-	}
-
-	if planet.config.Reconfigure.SatellitePointerDB != nil {
-		var newPointerDB metainfo.PointerDB
-		newPointerDB, err = planet.config.Reconfigure.SatellitePointerDB(log.Named("pointerdb"), index, pointerDB)
-		if err != nil {
-			return nil, errs.Combine(err, pointerDB.Close())
-		}
-		pointerDB = newPointerDB
-	}
-	planet.databases = append(planet.databases, pointerDB)
-
 	metabaseDB, err := satellitedbtest.CreateMetabaseDB(context.TODO(), log.Named("metabase"), planet.config.Name, "M", index, databases.MetabaseDB)
 	if err != nil {
 		return nil, err
@@ -619,9 +603,7 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 			MaxOrderLimitSendCount:       3,
 			NodeMinAgeInMonths:           0,
 		},
-		Metrics: metrics.Config{
-			ChoreInterval: defaultInterval,
-		},
+		Metrics: metrics.Config{},
 	}
 
 	if planet.config.Reconfigure.Satellite != nil {
@@ -646,7 +628,7 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 	rollupsWriteCache := orders.NewRollupsWriteCache(log.Named("orders-write-cache"), db.Orders(), config.Orders.FlushBatchSize)
 	planet.databases = append(planet.databases, rollupsWriteCacheCloser{rollupsWriteCache})
 
-	peer, err := satellite.New(log, identity, db, pointerDB, metabaseDB, revocationDB, liveAccounting, rollupsWriteCache, versionInfo, &config, nil)
+	peer, err := satellite.New(log, identity, db, metabaseDB, revocationDB, liveAccounting, rollupsWriteCache, versionInfo, &config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -661,7 +643,7 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 		return nil, err
 	}
 
-	api, err := planet.newAPI(ctx, index, identity, db, pointerDB, metabaseDB, config, versionInfo)
+	api, err := planet.newAPI(ctx, index, identity, db, metabaseDB, config, versionInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -671,12 +653,12 @@ func (planet *Planet) newSatellite(ctx context.Context, prefix string, index int
 		return nil, err
 	}
 
-	repairerPeer, err := planet.newRepairer(ctx, index, identity, db, pointerDB, metabaseDB, config, versionInfo)
+	repairerPeer, err := planet.newRepairer(ctx, index, identity, db, metabaseDB, config, versionInfo)
 	if err != nil {
 		return nil, err
 	}
 
-	gcPeer, err := planet.newGarbageCollection(ctx, index, identity, db, pointerDB, metabaseDB, config, versionInfo)
+	gcPeer, err := planet.newGarbageCollection(ctx, index, identity, db, metabaseDB, config, versionInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -711,7 +693,6 @@ func createNewSystem(name string, log *zap.Logger, config satellite.Config, peer
 	system.Overlay.Service = api.Overlay.Service
 	system.Overlay.DQStrayNodes = peer.Overlay.DQStrayNodes
 
-	system.Metainfo.Database = api.Metainfo.Database
 	system.Metainfo.Metabase = api.Metainfo.Metabase
 	system.Metainfo.Service = peer.Metainfo.Service
 	system.Metainfo.Endpoint2 = api.Metainfo.Endpoint2
@@ -756,7 +737,7 @@ func createNewSystem(name string, log *zap.Logger, config satellite.Config, peer
 	return system
 }
 
-func (planet *Planet) newAPI(ctx context.Context, index int, identity *identity.FullIdentity, db satellite.DB, pointerDB metainfo.PointerDB, metabaseDB metainfo.MetabaseDB, config satellite.Config, versionInfo version.Info) (*satellite.API, error) {
+func (planet *Planet) newAPI(ctx context.Context, index int, identity *identity.FullIdentity, db satellite.DB, metabaseDB metainfo.MetabaseDB, config satellite.Config, versionInfo version.Info) (*satellite.API, error) {
 	prefix := "satellite-api" + strconv.Itoa(index)
 	log := planet.log.Named(prefix)
 	var err error
@@ -776,7 +757,7 @@ func (planet *Planet) newAPI(ctx context.Context, index int, identity *identity.
 	rollupsWriteCache := orders.NewRollupsWriteCache(log.Named("orders-write-cache"), db.Orders(), config.Orders.FlushBatchSize)
 	planet.databases = append(planet.databases, rollupsWriteCacheCloser{rollupsWriteCache})
 
-	return satellite.NewAPI(log, identity, db, pointerDB, metabaseDB, revocationDB, liveAccounting, rollupsWriteCache, &config, versionInfo, nil)
+	return satellite.NewAPI(log, identity, db, metabaseDB, revocationDB, liveAccounting, rollupsWriteCache, &config, versionInfo, nil)
 }
 
 func (planet *Planet) newAdmin(ctx context.Context, index int, identity *identity.FullIdentity, db satellite.DB, config satellite.Config, versionInfo version.Info) (*satellite.Admin, error) {
@@ -786,7 +767,7 @@ func (planet *Planet) newAdmin(ctx context.Context, index int, identity *identit
 	return satellite.NewAdmin(log, identity, db, versionInfo, &config, nil)
 }
 
-func (planet *Planet) newRepairer(ctx context.Context, index int, identity *identity.FullIdentity, db satellite.DB, pointerDB metainfo.PointerDB, metabaseDB metainfo.MetabaseDB, config satellite.Config, versionInfo version.Info) (*satellite.Repairer, error) {
+func (planet *Planet) newRepairer(ctx context.Context, index int, identity *identity.FullIdentity, db satellite.DB, metabaseDB metainfo.MetabaseDB, config satellite.Config, versionInfo version.Info) (*satellite.Repairer, error) {
 	prefix := "satellite-repairer" + strconv.Itoa(index)
 	log := planet.log.Named(prefix)
 
@@ -799,7 +780,7 @@ func (planet *Planet) newRepairer(ctx context.Context, index int, identity *iden
 	rollupsWriteCache := orders.NewRollupsWriteCache(log.Named("orders-write-cache"), db.Orders(), config.Orders.FlushBatchSize)
 	planet.databases = append(planet.databases, rollupsWriteCacheCloser{rollupsWriteCache})
 
-	return satellite.NewRepairer(log, identity, pointerDB, metabaseDB, revocationDB, db.RepairQueue(), db.Buckets(), db.OverlayCache(), rollupsWriteCache, db.Irreparable(), versionInfo, &config, nil)
+	return satellite.NewRepairer(log, identity, metabaseDB, revocationDB, db.RepairQueue(), db.Buckets(), db.OverlayCache(), rollupsWriteCache, db.Irreparable(), versionInfo, &config, nil)
 }
 
 type rollupsWriteCacheCloser struct {
@@ -810,7 +791,7 @@ func (cache rollupsWriteCacheCloser) Close() error {
 	return cache.RollupsWriteCache.CloseAndFlush(context.TODO())
 }
 
-func (planet *Planet) newGarbageCollection(ctx context.Context, index int, identity *identity.FullIdentity, db satellite.DB, pointerDB metainfo.PointerDB, metabaseDB metainfo.MetabaseDB, config satellite.Config, versionInfo version.Info) (*satellite.GarbageCollection, error) {
+func (planet *Planet) newGarbageCollection(ctx context.Context, index int, identity *identity.FullIdentity, db satellite.DB, metabaseDB metainfo.MetabaseDB, config satellite.Config, versionInfo version.Info) (*satellite.GarbageCollection, error) {
 	prefix := "satellite-gc" + strconv.Itoa(index)
 	log := planet.log.Named(prefix)
 
@@ -819,7 +800,7 @@ func (planet *Planet) newGarbageCollection(ctx context.Context, index int, ident
 		return nil, errs.Wrap(err)
 	}
 	planet.databases = append(planet.databases, revocationDB)
-	return satellite.NewGarbageCollection(log, identity, db, pointerDB, metabaseDB, revocationDB, versionInfo, &config, nil)
+	return satellite.NewGarbageCollection(log, identity, db, metabaseDB, revocationDB, versionInfo, &config, nil)
 }
 
 // atLeastOne returns 1 if value < 1, or value otherwise.

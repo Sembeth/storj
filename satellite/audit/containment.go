@@ -10,12 +10,12 @@ import (
 
 	"storj.io/common/pb"
 	"storj.io/common/storj"
-	"storj.io/storj/satellite/metainfo/metabase"
+	"storj.io/storj/satellite/metabase"
 )
 
 var (
 	// ContainError is the containment errs class.
-	ContainError = errs.Class("containment error")
+	ContainError = errs.Class("containment")
 
 	// ErrContainedNotFound is the errs class for when a pending audit isn't found.
 	ErrContainedNotFound = errs.Class("pending audit not found")

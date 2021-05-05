@@ -22,7 +22,7 @@ import (
 	"storj.io/common/storj"
 	"storj.io/common/uuid"
 	"storj.io/storj/private/date"
-	"storj.io/storj/satellite/metainfo/metabase"
+	"storj.io/storj/satellite/metabase"
 	"storj.io/storj/satellite/nodeapiversion"
 )
 
@@ -75,7 +75,7 @@ type PendingSerial struct {
 
 var (
 	// Error the default orders errs class.
-	Error = errs.Class("orders error")
+	Error = errs.Class("orders")
 	// ErrUsingSerialNumber error class for serial number.
 	ErrUsingSerialNumber = errs.Class("serial number")
 

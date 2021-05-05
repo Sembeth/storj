@@ -94,26 +94,29 @@ compensation.withheld-percents: 75,75,75,50,50,50,25,25,25,0,0,0,0,0,0
 # indicates if user is allowed to add coupon codes to account
 # console.coupon-code-ui-enabled: false
 
+# indicates if Content Security Policy is enabled
+# console.csp-enabled: true
+
 # default project limits for users
 # console.default-project-limit: 3
 
 # url link to documentation
-# console.documentation-url: https://documentation.tardigrade.io/
+# console.documentation-url: https://docs.storj.io/
 
 # external endpoint of the satellite if hosted
 # console.external-address: ""
 
+# indicates if file browser flow is disabled
+# console.file-browser-flow-disabled: false
+
 # allow domains to embed the satellite in a frame, space separated
-# console.frame-ancestors: tardigrade.io
+# console.frame-ancestors: tardigrade.io storj.io
 
 # url link for gateway credentials requests
-# console.gateway-credentials-request-url: https://auth.tardigradeshare.io
+# console.gateway-credentials-request-url: https://auth.us1.storjshare.io
 
 # url link to general request page
-# console.general-request-url: https://support.tardigrade.io/hc/en-us/requests/new?ticket_form_id=360000379291
-
-# id for google tag manager
-# console.google-tag-manager-id: ""
+# console.general-request-url: https://supportdcs.storj.io/hc/en-us/requests/new?ticket_form_id=360000379291
 
 # indicates if satellite is in beta
 # console.is-beta-satellite: false
@@ -121,14 +124,20 @@ compensation.withheld-percents: 75,75,75,50,50,50,25,25,25,0,0,0,0,0,0
 # url link to let us know page
 # console.let-us-know-url: https://storjlabs.atlassian.net/servicedesk/customer/portals
 
+# url link for linksharing requests
+# console.linksharing-url: https://link.us1.storjshare.io
+
 # enable open registration
 # console.open-registration-enabled: false
 
-# names of partnered satellites
-# console.partnered-satellite-names: US-Central-1,Europe-West-1,Asia-East-1
+# names and addresses of partnered satellites in JSON list format
+# console.partnered-satellites: '[["US1","https://us1.storj.io"],["EU1","https://eu1.storj.io"],["AP1","https://ap1.storj.io"]]'
+
+# indicates if the overview onboarding step should render with pathways
+# console.pathway-overview-enabled: true
 
 # url link to project limit increase request page
-# console.project-limits-increase-request-url: https://support.tardigrade.io/hc/en-us/requests/new?ticket_form_id=360000683212
+# console.project-limits-increase-request-url: https://supportdcs.storj.io/hc/en-us/requests/new?ticket_form_id=360000683212
 
 # number of events before the limit kicks in
 # console.rate-limit.burst: 5
@@ -145,9 +154,6 @@ compensation.withheld-percents: 75,75,75,50,50,50,25,25,25,0,0,0,0,0,0
 # name of organization which set up satellite
 # console.satellite-operator: Storj Labs
 
-# used to initialize segment.io at web satellite console
-# console.segment-io-public-key: ""
-
 # used to communicate with web crawlers and other web robots
 # console.seo: "User-agent: *\nDisallow: \nDisallow: /cgi-bin/"
 
@@ -162,9 +168,6 @@ compensation.withheld-percents: 75,75,75,50,50,50,25,25,25,0,0,0,0,0,0
 
 # the default storage usage limit
 # console.usage-limits.default-storage-limit: 50.00 GB
-
-# url link to sign up verification page
-# console.verification-page-url: https://tardigrade.io/verify
 
 # the public address of the node, useful for nodes behind NAT
 contact.external-address: ""
@@ -212,7 +215,7 @@ contact.external-address: ""
 # expired-deletion.enabled: true
 
 # the time between each attempt to go through the db and clean up expired segments
-# expired-deletion.interval: 120h0m0s
+# expired-deletion.interval: 24h0m0s
 
 # how many expired objects to query in a batch
 # expired-deletion.list-limit: 100
@@ -409,9 +412,6 @@ identity.key-path: /root/.local/share/storj/identity/satellite/identity.key
 # application suffix
 # metrics.app-suffix: -release
 
-# the time between each metrics chore run
-# metrics.chore-interval: 15m0s
-
 # instance id prefix
 # metrics.instance-prefix: ""
 
@@ -511,17 +511,17 @@ identity.key-path: /root/.local/share/storj/identity/satellite/identity.key
 # amount of percents that user will earn as bonus credits by depositing in STORJ tokens
 # payments.bonus-rate: 10
 
-# duration a new coupon is valid in months/billing cycles
-# payments.coupon-duration: "2"
+# duration a new coupon is valid in months/billing cycles. An empty string means the coupon never expires
+# payments.coupon-duration: "1"
 
 # project limit to which increase to after applying the coupon, 0 B means not changing it from the default
 # payments.coupon-project-limit: 0 B
 
 # coupon value in cents
-# payments.coupon-value: 275
+# payments.coupon-value: 165
 
 # price user should pay for each TB of egress
-# payments.egress-tb-price: "45"
+# payments.egress-tb-price: "7"
 
 # minimum value of coin payments in cents before coupon is applied
 # payments.min-coin-payment: 1000
@@ -539,7 +539,7 @@ identity.key-path: /root/.local/share/storj/identity/satellite/identity.key
 # payments.node-repair-bandwidth-price: 1000
 
 # price user should pay for each object stored in network per month
-# payments.object-price: "0.0000022"
+# payments.object-price: "0"
 
 # proportion of users which require a balance to create projects [0-1]
 # payments.paywall-proportion: 0
@@ -548,7 +548,7 @@ identity.key-path: /root/.local/share/storj/identity/satellite/identity.key
 # payments.provider: ""
 
 # price user should pay for storing TB per month
-# payments.storage-tb-price: "10"
+# payments.storage-tb-price: "4"
 
 # amount of time we wait before running next account balance update loop
 # payments.stripe-coin-payments.account-balance-update-interval: 2m0s

@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"storj.io/common/storj"
-	"storj.io/storj/satellite/metainfo/metaloop"
+	"storj.io/storj/satellite/metabase/metaloop"
 	"storj.io/uplink/private/eestream"
 )
 
@@ -47,6 +47,11 @@ func NewPathCollector(db DB, nodeIDs storj.NodeIDList, log *zap.Logger, batchSiz
 	}
 
 	return collector
+}
+
+// LoopStarted is called at each start of a loop.
+func (collector *PathCollector) LoopStarted(context.Context, metaloop.LoopInfo) (err error) {
+	return nil
 }
 
 // Flush persists the current buffer items to the database.

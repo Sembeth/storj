@@ -11,7 +11,15 @@ import (
 )
 
 const (
-	eventAccountCreated = "Account Created"
+	eventAccountCreated            = "Account Created"
+	eventSignedIn                  = "Signed In"
+	eventProjectCreated            = "Project Created"
+	eventAccessGrantCreated        = "Access Grant Created"
+	eventAccountVerified           = "Account Verified"
+	eventGatewayCredentialsCreated = "Credentials Created"
+	eventPassphraseCreated         = "Passphrase Created"
+	eventExternalLinkClicked       = "External Link Clicked"
+	eventPathSelected              = "Path Selected"
 )
 
 // Config is a configuration struct for analytics Service.
@@ -27,6 +35,7 @@ type Service struct {
 	log           *zap.Logger
 	config        Config
 	satelliteName string
+	clientEvents  map[string]bool
 
 	segment segment.Client
 }
@@ -37,9 +46,13 @@ func NewService(log *zap.Logger, config Config, satelliteName string) *Service {
 		log:           log,
 		config:        config,
 		satelliteName: satelliteName,
+		clientEvents:  make(map[string]bool),
 	}
 	if config.Enabled {
 		service.segment = segment.New(config.SegmentWriteKey)
+	}
+	for _, name := range []string{eventGatewayCredentialsCreated, eventPassphraseCreated, eventExternalLinkClicked, eventPathSelected} {
+		service.clientEvents[name] = true
 	}
 	return service
 }
@@ -66,6 +79,7 @@ const (
 // TrackCreateUserFields contains input data for tracking a create user event.
 type TrackCreateUserFields struct {
 	ID            uuid.UUID
+	AnonymousID   string
 	FullName      string
 	Email         string
 	Type          UserType
@@ -92,8 +106,9 @@ func (service *Service) TrackCreateUser(fields TrackCreateUserFields) {
 	traits.SetEmail(fields.Email)
 
 	service.enqueueMessage(segment.Identify{
-		UserId: fields.ID.String(),
-		Traits: traits,
+		UserId:      fields.ID.String(),
+		AnonymousId: fields.AnonymousID,
+		Traits:      traits,
 	})
 
 	props := segment.NewProperties()
@@ -109,8 +124,106 @@ func (service *Service) TrackCreateUser(fields TrackCreateUserFields) {
 	}
 
 	service.enqueueMessage(segment.Track{
-		UserId:     fields.ID.String(),
-		Event:      eventAccountCreated,
+		UserId:      fields.ID.String(),
+		AnonymousId: fields.AnonymousID,
+		Event:       eventAccountCreated,
+		Properties:  props,
+	})
+}
+
+// TrackSignedIn sends an "Signed In" event to Segment.
+func (service *Service) TrackSignedIn(userID uuid.UUID, email string) {
+	traits := segment.NewTraits()
+	traits.SetEmail(email)
+
+	service.enqueueMessage(segment.Identify{
+		UserId: userID.String(),
+		Traits: traits,
+	})
+
+	props := segment.NewProperties()
+	props.Set("email", email)
+
+	service.enqueueMessage(segment.Track{
+		UserId:     userID.String(),
+		Event:      eventSignedIn,
+		Properties: props,
+	})
+}
+
+// TrackProjectCreated sends an "Project Created" event to Segment.
+func (service *Service) TrackProjectCreated(userID, projectID uuid.UUID, currentProjectCount int) {
+
+	props := segment.NewProperties()
+	props.Set("project_count", currentProjectCount)
+	props.Set("project_id", projectID.String())
+
+	service.enqueueMessage(segment.Track{
+		UserId:     userID.String(),
+		Event:      eventProjectCreated,
+		Properties: props,
+	})
+}
+
+// TrackAccessGrantCreated sends an "Access Grant Created" event to Segment.
+func (service *Service) TrackAccessGrantCreated(userID uuid.UUID) {
+
+	service.enqueueMessage(segment.Track{
+		UserId: userID.String(),
+		Event:  eventAccessGrantCreated,
+	})
+}
+
+// TrackAccountVerified sends an "Account Verified" event to Segment.
+func (service *Service) TrackAccountVerified(userID uuid.UUID, email string) {
+	traits := segment.NewTraits()
+	traits.SetEmail(email)
+
+	service.enqueueMessage(segment.Identify{
+		UserId: userID.String(),
+		Traits: traits,
+	})
+
+	props := segment.NewProperties()
+	props.Set("email", email)
+
+	service.enqueueMessage(segment.Track{
+		UserId:     userID.String(),
+		Event:      eventAccountVerified,
+		Properties: props,
+	})
+}
+
+// TrackEvent sends an arbitrary event associated with user ID to Segment.
+// It is used for tracking occurrences of client-side events.
+func (service *Service) TrackEvent(eventName string, userID uuid.UUID) {
+	// do not track if the event name is an invalid client-side event
+	if !service.clientEvents[eventName] {
+		service.log.Error("Invalid client-triggered event", zap.String("eventName", eventName))
+		return
+	}
+	service.enqueueMessage(segment.Track{
+		UserId: userID.String(),
+		Event:  eventName,
+	})
+}
+
+// TrackLinkEvent sends an arbitrary event and link associated with user ID to Segment.
+// It is used for tracking occurrences of client-side events.
+func (service *Service) TrackLinkEvent(eventName string, userID uuid.UUID, link string) {
+
+	// do not track if the event name is an invalid client-side event
+	if !service.clientEvents[eventName] {
+		service.log.Error("Invalid client-triggered event", zap.String("eventName", eventName))
+		return
+	}
+
+	props := segment.NewProperties()
+	props.Set("link", link)
+
+	service.enqueueMessage(segment.Track{
+		UserId:     userID.String(),
+		Event:      eventName,
 		Properties: props,
 	})
 }
