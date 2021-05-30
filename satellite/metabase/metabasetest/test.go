@@ -4,6 +4,7 @@
 package metabasetest
 
 import (
+	"bytes"
 	"context"
 	"sort"
 	"testing"
@@ -52,7 +53,14 @@ func (step BeginObjectExactVersion) Check(ctx *testcontext.Context, t testing.TB
 		require.WithinDuration(t, time.Now(), got.CreatedAt, 5*time.Second)
 		require.Equal(t, step.Opts.ObjectStream, got.ObjectStream)
 		require.Equal(t, step.Opts.ExpiresAt, got.ExpiresAt)
-		require.Equal(t, step.Opts.ZombieDeletionDeadline, got.ZombieDeletionDeadline)
+
+		gotDeadline := got.ZombieDeletionDeadline
+		optsDeadline := step.Opts.ZombieDeletionDeadline
+		if optsDeadline == nil {
+			require.WithinDuration(t, time.Now().Add(24*time.Hour), *gotDeadline, 5*time.Second)
+		} else {
+			require.WithinDuration(t, *optsDeadline, *gotDeadline, 5*time.Second)
+		}
 		require.Equal(t, step.Opts.Encryption, got.Encryption)
 	}
 }
@@ -372,6 +380,38 @@ func (step IterateLoopStreams) Check(ctx *testcontext.Context, t testing.TB, db 
 	require.Zero(t, diff)
 }
 
+// IterateLoopSegments is for testing metabase.IterateLoopSegments.
+type IterateLoopSegments struct {
+	Opts     metabase.IterateLoopSegments
+	Result   []metabase.LoopSegmentEntry
+	ErrClass *errs.Class
+	ErrText  string
+}
+
+// Check runs the test.
+func (step IterateLoopSegments) Check(ctx *testcontext.Context, t testing.TB, db *metabase.DB) {
+	result := make([]metabase.LoopSegmentEntry, 0, 10)
+	err := db.IterateLoopSegments(ctx, step.Opts,
+		func(ctx context.Context, iterator metabase.LoopSegmentsIterator) error {
+			var entry metabase.LoopSegmentEntry
+			for iterator.Next(ctx, &entry) {
+				result = append(result, entry)
+			}
+			return nil
+		})
+	checkError(t, err, step.ErrClass, step.ErrText)
+
+	if len(result) == 0 {
+		result = nil
+	}
+
+	sort.Slice(step.Result, func(i, j int) bool {
+		return bytes.Compare(step.Result[i].StreamID[:], step.Result[j].StreamID[:]) < 0
+	})
+	diff := cmp.Diff(step.Result, result, cmpopts.EquateApproxTime(5*time.Second))
+	require.Zero(t, diff)
+}
+
 // DeleteObjectExactVersion is for testing metabase.DeleteObjectExactVersion.
 type DeleteObjectExactVersion struct {
 	Opts     metabase.DeleteObjectExactVersion
@@ -384,6 +424,12 @@ type DeleteObjectExactVersion struct {
 func (step DeleteObjectExactVersion) Check(ctx *testcontext.Context, t testing.TB, db *metabase.DB) {
 	result, err := db.DeleteObjectExactVersion(ctx, step.Opts)
 	checkError(t, err, step.ErrClass, step.ErrText)
+
+	sortObjects(result.Objects)
+	sortObjects(step.Result.Objects)
+
+	sortDeletedSegments(result.Segments)
+	sortDeletedSegments(step.Result.Segments)
 
 	diff := cmp.Diff(step.Result, result, cmpopts.EquateApproxTime(5*time.Second))
 	require.Zero(t, diff)
@@ -402,6 +448,12 @@ func (step DeletePendingObject) Check(ctx *testcontext.Context, t testing.TB, db
 	result, err := db.DeletePendingObject(ctx, step.Opts)
 	checkError(t, err, step.ErrClass, step.ErrText)
 
+	sortObjects(result.Objects)
+	sortObjects(step.Result.Objects)
+
+	sortDeletedSegments(result.Segments)
+	sortDeletedSegments(step.Result.Segments)
+
 	diff := cmp.Diff(step.Result, result, cmpopts.EquateApproxTime(5*time.Second))
 	require.Zero(t, diff)
 }
@@ -419,6 +471,12 @@ func (step DeleteObjectLatestVersion) Check(ctx *testcontext.Context, t testing.
 	result, err := db.DeleteObjectLatestVersion(ctx, step.Opts)
 	checkError(t, err, step.ErrClass, step.ErrText)
 
+	sortObjects(result.Objects)
+	sortObjects(step.Result.Objects)
+
+	sortDeletedSegments(result.Segments)
+	sortDeletedSegments(step.Result.Segments)
+
 	diff := cmp.Diff(step.Result, result, cmpopts.EquateApproxTime(5*time.Second))
 	require.Zero(t, diff)
 }
@@ -435,6 +493,12 @@ type DeleteObjectAnyStatusAllVersions struct {
 func (step DeleteObjectAnyStatusAllVersions) Check(ctx *testcontext.Context, t testing.TB, db *metabase.DB) {
 	result, err := db.DeleteObjectAnyStatusAllVersions(ctx, step.Opts)
 	checkError(t, err, step.ErrClass, step.ErrText)
+
+	sortObjects(result.Objects)
+	sortObjects(step.Result.Objects)
+
+	sortDeletedSegments(result.Segments)
+	sortDeletedSegments(step.Result.Segments)
 
 	diff := cmp.Diff(step.Result, result, cmpopts.EquateApproxTime(5*time.Second))
 	require.Zero(t, diff)
@@ -455,6 +519,9 @@ func (step DeleteObjectsAllVersions) Check(ctx *testcontext.Context, t testing.T
 
 	sortObjects(result.Objects)
 	sortObjects(step.Result.Objects)
+
+	sortDeletedSegments(result.Segments)
+	sortDeletedSegments(step.Result.Segments)
 
 	diff := cmp.Diff(step.Result, result, cmpopts.EquateApproxTime(5*time.Second))
 	require.Zero(t, diff)
@@ -625,4 +692,32 @@ func (step ListNodeAliases) Check(ctx *testcontext.Context, t testing.TB, db *me
 	result, err := db.ListNodeAliases(ctx)
 	checkError(t, err, step.ErrClass, step.ErrText)
 	return result
+}
+
+// DeletePart is for testing metabase.DeletePart.
+type DeletePart struct {
+	Opts     metabase.DeletePart
+	Result   []metabase.DeletedSegmentInfo
+	ErrClass *errs.Class
+	ErrText  string
+}
+
+// Check runs the test.
+func (step DeletePart) Check(ctx *testcontext.Context, t testing.TB, db *metabase.DB) {
+	result := []metabase.DeletedSegmentInfo{}
+	step.Opts.DeletePieces = func(ctx context.Context, segment metabase.DeletedSegmentInfo) error {
+		result = append(result, segment)
+		return nil
+	}
+
+	err := db.DeletePart(ctx, step.Opts)
+	checkError(t, err, step.ErrClass, step.ErrText)
+
+	if len(result) == 0 {
+		result = nil
+	}
+	sortDeletedSegments(step.Result)
+	sortDeletedSegments(result)
+	diff := cmp.Diff(step.Result, result, cmpopts.EquateApproxTime(5*time.Second))
+	require.Zero(t, diff)
 }
